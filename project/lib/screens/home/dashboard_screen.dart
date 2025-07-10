@@ -1,0 +1,759 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:project/providers/chat_provider.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/booking_provider.dart';
+import '../../providers/notification_provider.dart';
+import '../../models/booking.dart';
+
+class DashboardScreen extends StatefulWidget {
+  @override
+  _DashboardScreenState createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  int _currentIndex = 0;
+  
+   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final bookingProvider = Provider.of<BookingProvider>(context, listen: false);
+
+      if (authProvider.user != null) {
+        bookingProvider.loadBookingsForStudent(authProvider.user!.studentId);
+      }
+    });
+  }
+  
+
+  final List<Widget> _screens = [
+    HomeTab(),
+    BookingsTab(),
+    ChatsTab(),
+    ProfileTab(),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: _screens[_currentIndex],
+      bottomNavigationBar: BottomNavigationBar(
+        type: BottomNavigationBarType.fixed,
+        currentIndex: _currentIndex,
+        onTap: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'Home',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.calendar_today),
+            label: 'Bookings',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.chat),
+            label: 'Chats',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person),
+            label: 'Profile',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class HomeTab extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final user = Provider.of<AuthProvider>(context).user;
+    final notificationProvider = Provider.of<NotificationProvider>(context);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Hello, ${user?.name.split(' ').first ?? 'Student'}'),
+        actions: [
+          Stack(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications),
+                onPressed: () {
+                  Navigator.pushNamed(context, '/notifications');
+                },
+              ),
+              if (notificationProvider.unreadCount > 0)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
+                    child: Text(
+                      '${notificationProvider.unreadCount}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Quick Actions
+            const Text(
+              'Quick Actions',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _QuickActionCard(
+                    icon: Icons.book_online,
+                    title: 'Book Session',
+                    subtitle: 'Schedule counseling',
+                    onTap: () {
+                      Navigator.pushNamed(context, '/counselors');
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _QuickActionCard(
+                    icon: Icons.chat,
+                    title: 'Start Chat',
+                    subtitle: 'Instant support',
+                    onTap: () {
+                      Navigator.pushNamed(context, '/chats');
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _QuickActionCard(
+                    icon: Icons.video_call,
+                    title: 'Video Call',
+                    subtitle: 'Face-to-face session',
+                    onTap: () {
+                      Navigator.pushNamed(context, '/video-call');
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _QuickActionCard(
+                    icon: Icons.group,
+                    title: 'Group Support',
+                    subtitle: 'Join community',
+                    onTap: () {
+                      Navigator.pushNamed(context, '/chats');
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 32),
+
+            // Upcoming Sessions
+            const Text(
+              'Upcoming Sessions',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Consumer<BookingProvider>(
+              builder: (context, bookingProvider, child) {
+                final upcomingBookings = bookingProvider.getBookingsByStatus(BookingStatus.confirmed);
+
+                if (upcomingBookings.isEmpty) {
+                  return Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.calendar_today,
+                            size: 48,
+                            color: Colors.grey[400],
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'No upcoming sessions',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          ElevatedButton(
+                            onPressed: () {
+                              Navigator.pushNamed(context, '/counselors');
+                            },
+                            child: const Text('Book a Session'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
+                return Column(
+                  children: upcomingBookings.take(3).map((booking) {
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: Theme.of(context).primaryColor,
+                          child: const Icon(Icons.person, color: Colors.white),
+                        ),
+                        title: Text(booking.counselorName),
+                        subtitle: Text(
+                          '${booking.scheduledDate.day}/${booking.scheduledDate.month} at ${booking.timeSlot}',
+                        ),
+                        trailing: Chip(
+                          label: Text(
+                            booking.sessionType.name.toUpperCase(),
+                            style: const TextStyle(fontSize: 10),
+                          ),
+                          backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickActionCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _QuickActionCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Icon(
+                icon,
+                size: 32,
+                color: Theme.of(context).primaryColor,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+class BookingsTab extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('My Bookings'),
+      ),
+      body: Consumer<BookingProvider>(
+        builder: (context, bookingProvider, child) {
+          if (bookingProvider.bookings.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.calendar_today,
+                    size: 64,
+                    color: Colors.grey[400],
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'No bookings yet',
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: Colors.grey,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.pushNamed(context, '/counselors');
+                    },
+                    child: const Text('Book Your First Session'),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: bookingProvider.bookings.length,
+            itemBuilder: (context, index) {
+              final booking = bookingProvider.bookings[index];
+              return Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              booking.counselorName,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          _StatusChip(status: booking.status),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(Icons.calendar_today, size: 16, color: Colors.grey[600]),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${booking.scheduledDate.day}/${booking.scheduledDate.month}/${booking.scheduledDate.year}',
+                            style: TextStyle(color: Colors.grey[600]),
+                          ),
+                          const SizedBox(width: 16),
+                          Icon(Icons.access_time, size: 16, color: Colors.grey[600]),
+                          const SizedBox(width: 4),
+                          Text(
+                            booking.timeSlot,
+                            style: TextStyle(color: Colors.grey[600]),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Chip(
+                            label: Text(
+                              booking.sessionType.name.toUpperCase(),
+                              style: const TextStyle(fontSize: 10),
+                            ),
+                            backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
+                          ),
+                          const SizedBox(width: 8),
+                          Chip(
+                            label: Text(
+                              booking.issueType.name.replaceAll('_', ' ').toUpperCase(),
+                              style: const TextStyle(fontSize: 10),
+                            ),
+                            backgroundColor: Colors.blue.withOpacity(0.1),
+                          ),
+                        ],
+                      ),
+                      if (booking.description.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          booking.description,
+                          style: TextStyle(color: Colors.grey[700]),
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          if (booking.status == BookingStatus.confirmed) ...[
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () {
+                                  if (booking.sessionType == SessionType.video) {
+                                    Navigator.pushNamed(context, '/video-call');
+                                  } else if (booking.sessionType == SessionType.chat) {
+                                    Navigator.pushNamed(context, '/chat');
+                                  }
+                                },
+                                icon: Icon(
+                                  booking.sessionType == SessionType.video
+                                      ? Icons.video_call
+                                      : booking.sessionType == SessionType.chat
+                                          ? Icons.chat
+                                          : Icons.location_on,
+                                ),
+                                label: Text(
+                                  booking.sessionType == SessionType.video
+                                      ? 'Join Video'
+                                      : booking.sessionType == SessionType.chat
+                                          ? 'Start Chat'
+                                          : 'View Location',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                          ],
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                bookingProvider.escalateIssue(booking.id);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Issue escalated to HOD'),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.report_problem),
+                              label: const Text('Escalate'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _StatusChip extends StatelessWidget {
+  final BookingStatus status;
+
+  const _StatusChip({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    Color color;
+    switch (status) {
+      case BookingStatus.pending:
+        color = Colors.orange;
+        break;
+      case BookingStatus.confirmed:
+        color = Colors.green;
+        break;
+      case BookingStatus.completed:
+        color = Colors.blue;
+        break;
+      case BookingStatus.cancelled:
+        color = Colors.red;
+        break;
+    }
+
+    return Chip(
+      label: Text(
+        status.name.toUpperCase(),
+        style: const TextStyle(
+          fontSize: 10,
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      backgroundColor: color,
+    );
+  }
+}
+
+class ChatsTab extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Chats'),
+      ),
+      body: Consumer<ChatProvider>(
+        builder: (context, chatProvider, child) {
+          return ListView.builder(
+            itemCount: chatProvider.chatRooms.length,
+            itemBuilder: (context, index) {
+              final chatRoom = chatProvider.chatRooms[index];
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: chatRoom.isGroup ? Colors.blue : Theme.of(context).primaryColor,
+                  child: Icon(
+                    chatRoom.isGroup ? Icons.group : Icons.person,
+                    color: Colors.white,
+                  ),
+                ),
+                title: Text(chatRoom.name),
+                subtitle: Text(chatRoom.lastMessage ?? 'No messages yet'),
+                trailing: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (chatRoom.lastMessageTime != null)
+                      Text(
+                        '${chatRoom.lastMessageTime!.hour}:${chatRoom.lastMessageTime!.minute.toString().padLeft(2, '0')}',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    if (chatRoom.unreadCount > 0)
+                      Container(
+                        margin: const EdgeInsets.only(top: 4),
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).primaryColor,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${chatRoom.unreadCount}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                onTap: () {
+                  Navigator.pushNamed(
+                    context,
+                    '/chat',
+                    arguments: chatRoom,
+                  );
+                },
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+class ProfileTab extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final user = Provider.of<AuthProvider>(context).user;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Profile'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.edit),
+            onPressed: () {
+              Navigator.pushNamed(context, '/profile');
+            },
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            CircleAvatar(
+              radius: 50,
+              backgroundColor: Theme.of(context).primaryColor,
+              child: Text(
+                user?.name.substring(0, 1).toUpperCase() ?? 'U',
+                style: const TextStyle(
+                  fontSize: 32,
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              user?.name ?? 'User',
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            Text(
+              user?.email ?? '',
+              style: const TextStyle(
+                fontSize: 16,
+                color: Colors.grey,
+              ),
+            ),
+            const SizedBox(height: 32),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    _ProfileItem(
+                      icon: Icons.badge,
+                      title: 'Student ID',
+                      value: user?.studentId ?? '',
+                    ),
+                    const Divider(),
+                    _ProfileItem(
+                      icon: Icons.phone,
+                      title: 'Phone',
+                      value: user?.phone ?? '',
+                    ),
+                    const Divider(),
+                    _ProfileItem(
+                      icon: Icons.school,
+                      title: 'Department',
+                      value: user?.department ?? '',
+                    ),
+                    const Divider(),
+                    _ProfileItem(
+                      icon: Icons.calendar_today,
+                      title: 'Year',
+                      value: user?.yearLevel.toString() ?? ''
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Logout'),
+                      content: const Text('Are you sure you want to logout?'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Cancel'),
+                        ),
+                        ElevatedButton(
+                          onPressed: () {
+                            Provider.of<AuthProvider>(context, listen: false).logout();
+                            Navigator.pushNamedAndRemoveUntil(
+                              context,
+                              '/login',
+                              (route) => false,
+                            );
+                          },
+                          child: const Text('Logout'),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.logout),
+                label: const Text('Logout'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfileItem extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String value;
+
+  const _ProfileItem({
+    required this.icon,
+    required this.title,
+    required this.value,
+  });
+
+  
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, color: Theme.of(context).primaryColor),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey,
+                ),
+              ),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
