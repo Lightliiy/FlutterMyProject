@@ -1,9 +1,24 @@
-// lib/models/booking.dart
-import 'package:flutter/material.dart'; // Keep this if Booking uses Flutter widgets directly, otherwise can be removed.
+import 'package:flutter/material.dart';
 
 enum SessionType { physical, video, chat }
-enum IssueType { academic, personal, career, mental_health, relationship, financial }
-enum BookingStatus { pending, confirmed, completed, cancelled }
+
+enum IssueType {
+  academic,
+  personal,
+  career,
+  mental_health,
+  relationship,
+  financial,
+}
+
+enum BookingStatus {
+  pending,
+  confirmed,
+  cancelled,
+  approve,
+  ESCALATED_TO_HOD,
+  ESCALATED_TO_ADMIN, 
+}
 
 extension SessionTypeExtension on SessionType {
   String toShortString() => toString().split('.').last;
@@ -26,6 +41,7 @@ class Booking {
   final BookingStatus status;
   final List<String> attachments;
   final bool isEscalated;
+  final bool isEscalatedToHOD; // ✅ NEW field
   final String? feedback;
 
   Booking({
@@ -41,29 +57,36 @@ class Booking {
     required this.status,
     required this.attachments,
     this.isEscalated = false,
+    this.isEscalatedToHOD = false, // ✅ default false
     this.feedback,
   });
 
- factory Booking.fromJson(Map<String, dynamic> json) {
-  return Booking(
-    id: json['id'].toString(),
-    studentId: json['studentId'] ?? '',
-    counselorId: json['counselorId'] ?? '',
-    counselorName: json['counselorName'] ?? '',
-    sessionType: SessionType.values.firstWhere((e) => e.name.toLowerCase() == json['sessionType'].toString().toLowerCase()),
-    issueType: IssueType.values.firstWhere((e) => e.name.toLowerCase() == json['issueType'].toString().toLowerCase()),
-    status: BookingStatus.values.firstWhere((e) => e.name.toLowerCase() == json['status'].toString().toLowerCase()),
-    description: json['description'] ?? '',
-    scheduledDate: DateTime.parse(json['scheduledDate']),
-    timeSlot: json['timeSlot'] ?? '',
-    attachments: json['attachments'] != null
-        ? List<String>.from(json['attachments'])
-        : [],
-    isEscalated: json['isEscalated'] ?? false,
-    feedback: json['feedback'],
-  );
-}
-
+  factory Booking.fromJson(Map<String, dynamic> json) {
+    return Booking(
+      id: json['id'].toString(),
+      studentId: json['studentId'] ?? '',
+      counselorId: json['counselorId'] ?? '',
+      counselorName: json['counselorName'] ?? '',
+      sessionType: SessionType.values.firstWhere(
+        (e) => e.name.toUpperCase() == json['sessionType'].toString().toUpperCase(),
+      ),
+      issueType: IssueType.values.firstWhere(
+        (e) => e.name.toUpperCase() == json['issueType'].toString().toUpperCase(),
+      ),
+      status: BookingStatus.values.firstWhere(
+        (e) => e.name.toUpperCase() == json['status'].toString().toUpperCase(),
+      ),
+      description: json['description'] ?? '',
+      scheduledDate: DateTime.parse(json['scheduledDate']),
+      timeSlot: json['timeSlot'] ?? '',
+      attachments: json['attachments'] != null
+          ? List<String>.from(json['attachments'])
+          : [],
+      isEscalated: json['isEscalated'] ?? false,
+      isEscalatedToHOD: json['isEscalatedToHOD'] ?? false, // ✅ Added
+      feedback: json['feedback'],
+    );
+  }
 
   Booking copyWith({
     String? id,
@@ -78,6 +101,7 @@ class Booking {
     BookingStatus? status,
     List<String>? attachments,
     bool? isEscalated,
+    bool? isEscalatedToHOD, // ✅ Added to copyWith
     String? feedback,
   }) {
     return Booking(
@@ -93,6 +117,7 @@ class Booking {
       status: status ?? this.status,
       attachments: attachments ?? this.attachments,
       isEscalated: isEscalated ?? this.isEscalated,
+      isEscalatedToHOD: isEscalatedToHOD ?? this.isEscalatedToHOD, // ✅
       feedback: feedback ?? this.feedback,
     );
   }

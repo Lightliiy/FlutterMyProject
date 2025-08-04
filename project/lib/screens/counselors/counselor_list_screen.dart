@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/booking_provider.dart';
-import '../../providers/user_provider.dart'; // <-- Import UserProvider
+import '../../providers/user_provider.dart';
+import '../../providers/chat_provider.dart';
 import '../../models/counselor.dart';
 
 class CounselorListScreen extends StatefulWidget {
@@ -18,7 +19,8 @@ class _CounselorListScreenState extends State<CounselorListScreen> {
       final studentId = userProvider.user?.studentId ?? '';
 
       if (studentId.isNotEmpty) {
-        Provider.of<BookingProvider>(context, listen: false).loadCounselorsForStudent(studentId);
+        Provider.of<BookingProvider>(context, listen: false)
+            .loadCounselorsForStudent(studentId);
       } else {
         print('No student ID found, cannot load counselors');
       }
@@ -37,7 +39,8 @@ class _CounselorListScreenState extends State<CounselorListScreen> {
 
           if (bookingProvider.counselors.isEmpty) {
             return const Center(
-              child: Text('No counselor has been assigned yet.', style: TextStyle(fontSize: 16)),
+              child: Text('No counselor has been assigned yet.',
+                  style: TextStyle(fontSize: 16)),
             );
           }
 
@@ -59,7 +62,10 @@ class _CounselorListScreenState extends State<CounselorListScreen> {
                           backgroundColor: Theme.of(context).primaryColor,
                           child: Text(
                             counselor.name.substring(0, 1).toUpperCase(),
-                            style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold),
                           ),
                         ),
                         const SizedBox(width: 16),
@@ -69,7 +75,8 @@ class _CounselorListScreenState extends State<CounselorListScreen> {
                             children: [
                               Text(
                                 counselor.name,
-                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                style: const TextStyle(
+                                    fontSize: 18, fontWeight: FontWeight.bold),
                               ),
                               const SizedBox(height: 4),
                               Row(
@@ -78,7 +85,9 @@ class _CounselorListScreenState extends State<CounselorListScreen> {
                                     width: 8,
                                     height: 8,
                                     decoration: BoxDecoration(
-                                      color: counselor.isOnline ? Colors.green : Colors.grey,
+                                      color: counselor.isOnline
+                                          ? Colors.green
+                                          : Colors.grey,
                                       shape: BoxShape.circle,
                                     ),
                                   ),
@@ -87,7 +96,9 @@ class _CounselorListScreenState extends State<CounselorListScreen> {
                                     counselor.isOnline ? 'Online' : 'Offline',
                                     style: TextStyle(
                                       fontSize: 12,
-                                      color: counselor.isOnline ? Colors.green : Colors.grey,
+                                      color: counselor.isOnline
+                                          ? Colors.green
+                                          : Colors.grey,
                                     ),
                                   ),
                                 ],
@@ -99,18 +110,68 @@ class _CounselorListScreenState extends State<CounselorListScreen> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      counselor.description ?? '',
+                      counselor.description ?? 'No description',
                       style: TextStyle(color: Colors.grey[700], fontSize: 14),
                     ),
                     const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () {
-                          Navigator.pushNamed(context, '/booking', arguments: counselor);
-                        },
-                        child: const Text('Book Session'),
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () {
+                              // Navigate to booking screen with counselor
+                              Navigator.pushNamed(
+                                context,
+                                '/booking',
+                                arguments: counselor,
+                              );
+                            },
+                            child: const Text('Book Appointment'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () async {
+                              final chatProvider = Provider.of<ChatProvider>(
+                                  context,
+                                  listen: false);
+                              final userProvider = Provider.of<UserProvider>(
+                                  context,
+                                  listen: false);
+                              final studentId = userProvider.user?.studentId;
+
+                              if (studentId != null) {
+                                final chat = await chatProvider.getOrCreateChat(
+                                  counselor.id,
+                                  studentId,
+                                  counselor.name,
+                                );
+
+                                if (chat != null) {
+                                  Navigator.pushNamed(
+                                    context,
+                                    '/chat',
+                                    arguments: chat,
+                                  );
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                        content: Text(
+                                            'Failed to start chat with counselor')),
+                                  );
+                                }
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content: Text('Student not logged in')),
+                                );
+                              }
+                            },
+                            child: const Text('Chat'),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

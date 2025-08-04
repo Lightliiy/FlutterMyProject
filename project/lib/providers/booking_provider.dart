@@ -16,11 +16,10 @@ class BookingProvider with ChangeNotifier {
   List<Counselor> get counselors => _counselors;
   bool get isLoading => _isLoading;
 
-  static const String baseUrl = 'http://10.8.5.62:8080/api';
+  static const String baseUrl = 'http://10.132.251.181:8080/api';
 
   BookingProvider();
 
-  // Create a booking and refresh the booking list
   Future<bool> createBooking({
     required String studentId,
     required String counselorId,
@@ -52,7 +51,6 @@ class BookingProvider with ChangeNotifier {
 
       if (response.statusCode == 201) {
         await loadBookingsForStudent(studentId);
-        // Start refreshing bookings periodically to track progress
         startAutoRefreshBookings(studentId);
         return true;
       } else {
@@ -67,33 +65,29 @@ class BookingProvider with ChangeNotifier {
     }
   }
 
-  // Load counselors assigned to a student
- Future<void> loadCounselorsForStudent(String studentId) async {
-  _setLoading(true);
-  try {
-    final encodedStudentId = Uri.encodeComponent(studentId);
-    final url = Uri.parse('$baseUrl/counselors/assigned?studentId=$encodedStudentId');
+  Future<void> loadCounselorsForStudent(String studentId) async {
+    _setLoading(true);
+    try {
+      final encodedStudentId = Uri.encodeComponent(studentId);
+      final url = Uri.parse('$baseUrl/counselors/assigned?studentId=$encodedStudentId');
 
-    final response = await http.get(url);
+      final response = await http.get(url);
 
-    if (response.statusCode == 200) {
-      final jsonData = json.decode(response.body);
-
-      _counselors = [Counselor.fromJson(jsonData)];
-      
-    } else {
+      if (response.statusCode == 200) {
+        final jsonData = json.decode(response.body);
+        _counselors = [Counselor.fromJson(jsonData)];
+      } else {
+        _counselors = [];
+        print('Counselor not found for student ID: $studentId');
+      }
+    } catch (e) {
       _counselors = [];
-      print('Counselor not found for student ID: $studentId');
+      print('Error loading counselor: $e');
+    } finally {
+      _setLoading(false);
     }
-  } catch (e) {
-    _counselors = [];
-    print('Error loading counselor: $e');
-  } finally {
-    _setLoading(false);
   }
-}
 
-  // Fetch a single counselor by ID
   Future<Counselor?> fetchCounselorById(String id) async {
     try {
       final response = await http.get(Uri.parse('$baseUrl/counselors/$id'));
@@ -106,7 +100,6 @@ class BookingProvider with ChangeNotifier {
     return null;
   }
 
-  // Load bookings for a student
   Future<void> loadBookingsForStudent(String studentId) async {
     _setLoading(true);
     try {
@@ -128,45 +121,43 @@ class BookingProvider with ChangeNotifier {
     }
   }
 
-  // Filter bookings by status
   List<Booking> getBookingsByStatus(BookingStatus status) {
     return _bookings.where((booking) => booking.status == status).toList();
   }
 
-  // Escalate an issue for a booking
-  Future<void> escalateIssue(String bookingId) async {
-    final index = _bookings.indexWhere((b) => b.id == bookingId);
-    if (index == -1) return;
+  // 🔺 Escalate booking issue to HOD
+Future<void> escalateIssue(String bookingId) async {
+  try {
+    final url = Uri.parse('$baseUrl/hod/escalate-case/booking/$bookingId');
+    final response = await http.post(url);
 
-    try {
-      final response = await http.put(Uri.parse('$baseUrl/bookings/escalate/$bookingId'));
-      if (response.statusCode == 200) {
-        _bookings[index] = _bookings[index].copyWith(isEscalated: true);
-        notifyListeners();
-      } else {
-        print('Failed to escalate issue: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error escalating issue: $e');
+    if (response.statusCode == 200) {
+      // ✅ Success
+    } else {
+      print('Failed to escalate to HOD: ${response.statusCode}');
+      print('Response body: ${response.body}');
     }
+  } catch (e) {
+    print('Error escalating to HOD: $e');
   }
+}
 
-  // Start periodic refresh of bookings
+
+
+
   void startAutoRefreshBookings(String studentId, {int intervalSeconds = 5}) {
-    _bookingRefreshTimer?.cancel(); // Cancel any existing timer
+    _bookingRefreshTimer?.cancel();
 
     _bookingRefreshTimer = Timer.periodic(Duration(seconds: intervalSeconds), (_) async {
       await loadBookingsForStudent(studentId);
     });
   }
 
-  // Stop periodic refresh
   void stopAutoRefreshBookings() {
     _bookingRefreshTimer?.cancel();
     _bookingRefreshTimer = null;
   }
 
-  // Helper to set loading state
   void _setLoading(bool value) {
     _isLoading = value;
     notifyListeners();

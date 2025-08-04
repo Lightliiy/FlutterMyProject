@@ -1,5 +1,5 @@
 class AppConstants {
-  static const String baseUrl = 'http://10.8.5.62:8080'; // Your server IP and port
+  static const String baseUrl = 'http://10.132.251.181:8080'; // Your server IP and port
 
   static const String apiEndpointPrefix = '/api'; // API base path
 
@@ -10,7 +10,6 @@ class AppConstants {
   // Chat Endpoints
   static const String chatRoomsEndpoint = '$apiEndpointPrefix/chats';
   static const String chatMessagesEndpoint = '$apiEndpointPrefix/chats'; // append /{chatRoomId}/messages when used
-  static const String joinGroupEndpoint = '$apiEndpointPrefix/groups/join';
   static const String counselorsEndpoint = '$apiEndpointPrefix/counselors';
   static const String createPrivateChatEndpoint = '$apiEndpointPrefix/chats/private';
 

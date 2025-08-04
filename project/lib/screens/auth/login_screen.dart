@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/user_provider.dart'; // <-- Make sure this is imported
 
@@ -32,13 +33,19 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       if (success) {
-        // ✅ Set user in UserProvider
-        if (authProvider.user != null) {
-          userProvider.setUser(authProvider.user!);
-        }
+  // ✅ Set user in UserProvider
+  if (authProvider.user != null) {
+    userProvider.setUser(authProvider.user!);
 
-        Navigator.pushReplacementNamed(context, '/dashboard');
-      } else {
+    // ✅ Store studentId for future use
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('studentId', authProvider.user!.studentId);
+    print('Saved studentId: ${authProvider.user!.studentId}');
+
+  }
+
+  Navigator.pushReplacementNamed(context, '/dashboard');
+}else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(authProvider.error ?? 'Login failed'),

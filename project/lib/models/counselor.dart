@@ -25,7 +25,7 @@ class Counselor {
       availableSlots: json['availableSlots'] != null
           ? List<String>.from(json['availableSlots'].map((x) => x.toString()))
           : [],
-      isOnline: json['isOnline'] ?? false,
+      isOnline: json['isOnline'] ?? true,
       description: json['description']?.toString() ?? '',
       assignedStudentIds: json['assignedStudentIds'] != null
           ? List<String>.from(json['assignedStudentIds'].map((x) => x.toString()))

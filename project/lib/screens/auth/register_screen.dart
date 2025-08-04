@@ -25,10 +25,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final List<String> _departments = [
     'Computer Science',
     'Natural Science',
-    'Tourism',
     'Medicine',
     'Law',
     'Arts & Humanities',
+    'Tourism',
   ];
 
   int parseYearLevel(String year) {

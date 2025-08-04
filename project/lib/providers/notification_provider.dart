@@ -9,6 +9,7 @@ class NotificationItem {
   final DateTime timestamp;
   final bool isRead;
   final String type;
+  final String? reply;  // Added reply field
 
   NotificationItem({
     required this.id,
@@ -17,6 +18,7 @@ class NotificationItem {
     required this.timestamp,
     this.isRead = false,
     required this.type,
+    this.reply,
   });
 
   NotificationItem copyWith({
@@ -26,6 +28,7 @@ class NotificationItem {
     DateTime? timestamp,
     bool? isRead,
     String? type,
+    String? reply,
   }) {
     return NotificationItem(
       id: id ?? this.id,
@@ -34,17 +37,19 @@ class NotificationItem {
       timestamp: timestamp ?? this.timestamp,
       isRead: isRead ?? this.isRead,
       type: type ?? this.type,
+      reply: reply ?? this.reply,
     );
   }
 
   factory NotificationItem.fromJson(Map<String, dynamic> json) {
     return NotificationItem(
-      id: json['id'],
+      id: json['id'].toString(),
       title: json['title'],
       message: json['message'],
       timestamp: DateTime.parse(json['timestamp']),
-      isRead: json['isRead'] ?? false,
+      isRead: json['read'] ?? false,
       type: json['type'],
+      reply: json['reply'],
     );
   }
 
@@ -55,24 +60,51 @@ class NotificationItem {
         'timestamp': timestamp.toIso8601String(),
         'isRead': isRead,
         'type': type,
+        'reply': reply,
       };
 }
 
 class NotificationProvider with ChangeNotifier {
   List<NotificationItem> _notifications = [];
-
   List<NotificationItem> get notifications => _notifications;
   int get unreadCount => _notifications.where((n) => !n.isRead).length;
 
   final String backendBaseUrl;
-  final String userId;
+  String? _userId;
+  String? get userId => _userId;
+  set userId(String? value) {
+    _userId = value;
+    initialize(); // Automatically fetch when userId changes
+  }
 
-  NotificationProvider({required this.backendBaseUrl, required this.userId});
+  NotificationProvider({
+    required this.backendBaseUrl,
+    required String? userId,
+  }) : _userId = userId {
+    initialize();
+  }
 
-  /// Fetch notifications from backend
+  Future<void> initialize() async {
+    if (userId == null || userId!.isEmpty) {
+      print('Skipping notification fetch: userId is null or empty.');
+      return;
+    }
+    await fetchNotifications();
+  }
+
   Future<void> fetchNotifications() async {
+    if (userId == null || userId!.isEmpty) {
+      print('Skipping fetchNotifications: userId is null or empty.');
+      return;
+    }
+
     try {
-      final response = await http.get(Uri.parse('$backendBaseUrl/notifications/user/$userId'));
+      final url = '$backendBaseUrl/notifications/user?userId=${Uri.encodeQueryComponent(userId!)}';
+      print('Fetching notifications for userId: "$userId"');
+      final response = await http.get(Uri.parse(url));
+      print('Response status code: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
         _notifications = data.map((json) => NotificationItem.fromJson(json)).toList();
@@ -85,7 +117,26 @@ class NotificationProvider with ChangeNotifier {
     }
   }
 
-  /// Send a new notification to backend
+  /// Deletes a notification from backend and removes it locally
+Future<void> deleteNotification(String notificationId) async {
+  final url = Uri.parse('$backendBaseUrl/notifications/$notificationId');
+
+  try {
+    final response = await http.delete(url);
+
+    if (response.statusCode == 200 || response.statusCode == 204) {
+      _notifications.removeWhere((n) => n.id == notificationId);
+      notifyListeners();
+      print('Notification $notificationId deleted successfully.');
+    } else {
+      print('Failed to delete notification: ${response.statusCode}');
+    }
+  } catch (e) {
+    print('Error deleting notification: $e');
+  }
+}
+
+
   Future<bool> sendNotification(NotificationItem notification) async {
     try {
       final response = await http.post(
@@ -106,9 +157,6 @@ class NotificationProvider with ChangeNotifier {
     }
   }
 
-  
-
-  /// Add to local list only
   void addNotification(NotificationItem notification) {
     _notifications.insert(0, notification);
     notifyListeners();
@@ -129,17 +177,26 @@ class NotificationProvider with ChangeNotifier {
     }
   }
 
-  void removeNotification(String notificationId) {
-    _notifications.removeWhere((n) => n.id == notificationId);
-    notifyListeners();
-  }
+  Future<void> addBookingCancellationNotification(
+    String bookingId, String counselorName, DateTime scheduledDate) async {
+  final cancellationNotification = NotificationItem(
+    id: bookingId,
+    title: 'Booking Cancelled',
+    message: 'Your session with $counselorName on ${scheduledDate.day}/${scheduledDate.month} has been cancelled.',
+    timestamp: DateTime.now(),
+    type: 'booking_cancellation',
+    isRead: false,
+  );
+
+  await sendNotification(cancellationNotification);
+}
+
 
   void clearAllNotifications() {
     _notifications.clear();
     notifyListeners();
   }
 
-  /// Add a booking notification and send to backend
   Future<void> addBookingNotification(String bookingId, String counselorName, DateTime scheduledDate) async {
     final newNotification = NotificationItem(
       id: bookingId,
@@ -153,8 +210,30 @@ class NotificationProvider with ChangeNotifier {
     await sendNotification(newNotification);
   }
 
-  Future<void> initialize() async {
-    await fetchNotifications();
+  /// Send a reply for a notification
+  Future<bool> sendReply(String notificationId, String replyMessage) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$backendBaseUrl/notifications/$notificationId/reply'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'reply': replyMessage}),
+      );
+
+      if (response.statusCode == 200) {
+        // Update local notification with reply
+        final index = _notifications.indexWhere((n) => n.id == notificationId);
+        if (index != -1) {
+          _notifications[index] = _notifications[index].copyWith(reply: replyMessage);
+          notifyListeners();
+        }
+        return true;
+      } else {
+        print('Failed to send reply: ${response.statusCode}');
+        return false;
+      }
+    } catch (e) {
+      print('Error sending reply: $e');
+      return false;
+    }
   }
 }
-

@@ -1,9 +1,22 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 
 class ChatScreen extends StatefulWidget {
+  final String counselorId;
+  final String chatId;
+  final String counselorName;
+
+  const ChatScreen({
+    Key? key,
+    required this.counselorId,
+    required this.chatId,
+    required this.counselorName,
+  }) : super(key: key);
+
   @override
   _ChatScreenState createState() => _ChatScreenState();
 }
@@ -11,30 +24,72 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
+  Timer? _pollingTimer;
+  String? _chatId;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final chatRoom = ModalRoute.of(context)!.settings.arguments as ChatRoom;
-      Provider.of<ChatProvider>(context, listen: false).loadMessages(chatRoom.id);
+      _initializeChat();
     });
+
+    _pollingTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+      _initializeChat();
+    });
+  }
+
+  Future<void> _initializeChat() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final studentId = authProvider.user?.studentId;
+
+    if (studentId != null) {
+      final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+      final chat = await chatProvider.getOrCreateChat(
+        widget.counselorId,
+        studentId,
+        widget.counselorName,
+      );
+      if (chat != null) {
+        _chatId = chat.id;
+        await chatProvider.loadMessages(chat.id, studentId);
+
+        if (!mounted) return;
+        setState(() {});
+        _scrollToBottom();
+      }
+    }
   }
 
   @override
   void dispose() {
+    _pollingTimer?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
   void _sendMessage() {
-    if (_messageController.text.trim().isNotEmpty) {
-      final chatRoom = ModalRoute.of(context)!.settings.arguments as ChatRoom;
-      Provider.of<ChatProvider>(context, listen: false)
-          .sendMessage(chatRoom.id, _messageController.text.trim());
-      _messageController.clear();
-      _scrollToBottom();
+    final text = _messageController.text.trim();
+    if (text.isNotEmpty && _chatId != null) {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final user = authProvider.user;
+      if (user != null) {
+        Provider.of<ChatProvider>(context, listen: false)
+            .sendMessage(
+              _chatId!,
+              text,
+              user.studentId,
+              user.name,
+              widget.counselorId,
+              user.studentId,
+              widget.counselorName,
+            )
+            .then((_) {
+          _messageController.clear();
+          _scrollToBottom();
+        });
+      }
     }
   }
 
@@ -57,11 +112,23 @@ class _ChatScreenState extends State<ChatScreen> {
         allowedExtensions: ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'],
       );
 
-      if (result != null) {
-        final chatRoom = ModalRoute.of(context)!.settings.arguments as ChatRoom;
-        Provider.of<ChatProvider>(context, listen: false)
-            .sendMessage(chatRoom.id, '📎 ${result.files.first.name}');
-        _scrollToBottom();
+      if (result != null && result.files.isNotEmpty) {
+        final fileName = result.files.first.name;
+
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        final user = authProvider.user;
+        if (user != null) {
+          await Provider.of<ChatProvider>(context, listen: false).sendMessage(
+            widget.chatId,
+            '📎 $fileName',
+            user.studentId,
+            user.name,
+            widget.counselorId,
+            user.studentId,
+            widget.counselorName,
+          );
+          _scrollToBottom();
+        }
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -73,100 +140,68 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _deleteChat() async {
+    if (_chatId == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Chat'),
+        content: const Text('Are you sure you want to delete this chat? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+        await chatProvider.deleteChat(_chatId!);
+        // Clear UI state after deletion
+        setState(() {
+          _chatId = null;
+        });
+        _messageController.clear();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Chat deleted')),
+        );
+        Navigator.of(context).pop(); // Optionally close the chat screen
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete chat: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final chatRoom = ModalRoute.of(context)!.settings.arguments as ChatRoom;
-
     return Scaffold(
       appBar: AppBar(
-        title: Row(
-          children: [
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: chatRoom.isGroup 
-                  ? Colors.blue 
-                  : Theme.of(context).primaryColor,
-              child: Icon(
-                chatRoom.isGroup ? Icons.group : Icons.person,
-                color: Colors.white,
-                size: 16,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    chatRoom.name,
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                  if (!chatRoom.isGroup)
-                    const Text(
-                      'Online',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.white70,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
+        title: const Text("Chat"),
         actions: [
-          if (!chatRoom.isGroup) ...[
-            IconButton(
-              icon: const Icon(Icons.video_call),
-              onPressed: () {
-                Navigator.pushNamed(context, '/video-call', arguments: chatRoom);
-              },
-            ),
-            IconButton(
-              icon: const Icon(Icons.phone),
-              onPressed: () {
-                // Voice call functionality
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Voice call feature coming soon')),
-                );
-              },
-            ),
-          ],
-          PopupMenuButton(
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'info',
-                child: Text('Chat Info'),
-              ),
-              if (!chatRoom.isGroup)
-                const PopupMenuItem(
-                  value: 'escalate',
-                  child: Text('Escalate Issue'),
-                ),
-              const PopupMenuItem(
-                value: 'clear',
-                child: Text('Clear Chat'),
-              ),
-            ],
-            onSelected: (value) {
-              switch (value) {
-                case 'escalate':
-                  _showEscalateDialog();
-                  break;
-                case 'clear':
-                  _showClearChatDialog();
-                  break;
-                case 'info':
-                  _showChatInfo();
-                  break;
-              }
-            },
+          IconButton(
+            icon: const Icon(Icons.info_outline),
+            onPressed: _showChatInfo,
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete),
+            onPressed: _deleteChat,
+            tooltip: 'Delete Chat',
           ),
         ],
       ),
       body: Column(
         children: [
-          // Messages List
           Expanded(
             child: Consumer<ChatProvider>(
               builder: (context, chatProvider, child) {
@@ -175,161 +210,62 @@ class _ChatScreenState extends State<ChatScreen> {
                 }
 
                 if (chatProvider.messages.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.chat_bubble_outline,
-                          size: 64,
-                          color: Colors.grey[400],
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'No messages yet',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Start the conversation!',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
+                  return const Center(child: Text('No messages yet'));
                 }
 
-                
+                final List<ChatMessage> messages = List.from(chatProvider.messages)
+                  ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
                 return ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.all(16),
-                  itemCount: chatProvider.messages.length,
+                  itemCount: messages.length,
                   itemBuilder: (context, index) {
-                    final message = chatProvider.messages[index];
-                    return _MessageBubble(message: message);
+                    final message = messages[index];
+                    return _MessageBubble(
+                      message: message,
+                      showAvatarAndName: true,
+                    );
                   },
                 );
               },
             ),
           ),
-
-          FloatingActionButton(
-  child: Icon(Icons.group_add),
-  onPressed: () {
-    Navigator.pushNamed(context, '/chat');
-  },
-),
-
-          
-          // Message Input
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Theme.of(context).scaffoldBackgroundColor,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.grey.withOpacity(0.2),
-                  spreadRadius: 1,
-                  blurRadius: 3,
-                  offset: const Offset(0, -1),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.attach_file),
-                  onPressed: _pickAndSendFile,
-                ),
-                Expanded(
-                  child: TextField(
-                    controller: _messageController,
-                    decoration: InputDecoration(
-                      hintText: 'Type a message...',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                    ),
-                    maxLines: null,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => _sendMessage(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                FloatingActionButton.small(
-                  onPressed: _sendMessage,
-                  child: const Icon(Icons.send),
-                ),
-              ],
-            ),
-          ),
+          _buildInputArea(),
         ],
       ),
     );
   }
 
-  void _showEscalateDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Escalate Issue'),
-        content: const Text(
-          'This will escalate your issue to the Head of Department. Are you sure you want to continue?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+  Widget _buildInputArea() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.attach_file),
+            onPressed: _pickAndSendFile,
           ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Issue escalated to HOD'),
-                  backgroundColor: Colors.green,
+          Expanded(
+            child: TextField(
+              controller: _messageController,
+              decoration: InputDecoration(
+                hintText: 'Type a message...',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
                 ),
-              );
-            },
-            child: const Text('Escalate'),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              ),
+              maxLines: null,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => _sendMessage(),
+            ),
           ),
-        ],
-      ),
-    );
-  }
-
-  void _showClearChatDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Clear Chat'),
-        content: const Text('This will delete all messages in this chat. This action cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              // Clear chat logic here
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Chat cleared')),
-              );
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Clear'),
+          const SizedBox(width: 8),
+          FloatingActionButton.small(
+            onPressed: _sendMessage,
+            child: const Icon(Icons.send),
           ),
         ],
       ),
@@ -337,28 +273,11 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _showChatInfo() {
-    final chatRoom = ModalRoute.of(context)!.settings.arguments as ChatRoom;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(chatRoom.name),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (chatRoom.isGroup) ...[
-              const Text('Type: Group Chat'),
-              const SizedBox(height: 8),
-              const Text('Members: 15 active members'),
-            ] else ...[
-              const Text('Type: Private Chat'),
-              const SizedBox(height: 8),
-              const Text('Status: Online'),
-              const SizedBox(height: 8),
-              const Text('Specialization: Academic Counseling'),
-            ],
-          ],
-        ),
+        title: const Text("Chat Info"),
+        content: const Text("This chat is between you and the counselor."),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -372,47 +291,63 @@ class _ChatScreenState extends State<ChatScreen> {
 
 class _MessageBubble extends StatelessWidget {
   final ChatMessage message;
+  final bool showAvatarAndName;
 
-  const _MessageBubble({required this.message});
+  const _MessageBubble({
+    required this.message,
+    this.showAvatarAndName = true,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final senderInitial = message.senderName.isNotEmpty
+        ? message.senderName[0].toUpperCase()
+        : '?';
+    final senderDisplayName = message.senderName.isNotEmpty
+        ? message.senderName
+        : 'Unknown';
+
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.only(bottom: showAvatarAndName ? 12 : 4),
       child: Row(
-        mainAxisAlignment: message.isMe 
-            ? MainAxisAlignment.end 
-            : MainAxisAlignment.start,
+        mainAxisAlignment:
+            message.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          if (!message.isMe) ...[
+          if (!message.isMe && showAvatarAndName)
             CircleAvatar(
               radius: 16,
               backgroundColor: Theme.of(context).primaryColor,
               child: Text(
-                message.senderName.substring(0, 1),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                ),
+                senderInitial,
+                style: const TextStyle(color: Colors.white, fontSize: 12),
               ),
             ),
-            const SizedBox(width: 8),
-          ],
+          if (!message.isMe && !showAvatarAndName)
+            const SizedBox(width: 40),
+          const SizedBox(width: 8),
           Flexible(
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
-                color: message.isMe 
-                    ? Theme.of(context).primaryColor 
+                color: message.isMe
+                    ? Theme.of(context).primaryColor
                     : Colors.grey[200],
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(18),
+                  topRight: const Radius.circular(18),
+                  bottomLeft: Radius.circular(
+                      message.isMe || showAvatarAndName ? 18 : 6),
+                  bottomRight: Radius.circular(
+                      message.isMe ? (showAvatarAndName ? 18 : 6) : 18),
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (!message.isMe)
+                  if (!message.isMe && showAvatarAndName)
                     Text(
-                      message.senderName,
+                      senderDisplayName,
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
@@ -431,29 +366,13 @@ class _MessageBubble extends StatelessWidget {
                     '${message.timestamp.hour}:${message.timestamp.minute.toString().padLeft(2, '0')}',
                     style: TextStyle(
                       fontSize: 10,
-                      color: message.isMe 
-                          ? Colors.white70 
-                          : Colors.grey[600],
+                      color: message.isMe ? Colors.white70 : Colors.grey[600],
                     ),
                   ),
                 ],
               ),
             ),
           ),
-          if (message.isMe) ...[
-            const SizedBox(width: 8),
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: Colors.blue,
-              child: const Text(
-                'Y',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );

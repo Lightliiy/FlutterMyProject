@@ -35,9 +35,8 @@ class AuthProvider with ChangeNotifier {
         final Map<String, dynamic> responseData = json.decode(response.body);
         _user = User.fromJson(responseData);
 
-        // ✅ Store the student ID in SharedPreferences
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('studentId', _user!.id.toString());
+        await prefs.setString('studentId', _user!.studentId);
 
         _isLoading = false;
         notifyListeners();
@@ -54,6 +53,38 @@ class AuthProvider with ChangeNotifier {
     _isLoading = false;
     notifyListeners();
     return false;
+  }
+
+  Future<bool> updateStudentProfile(User updatedUser) async {
+    final url = Uri.parse('${AppConstants.baseUrl}/api/students/${updatedUser.id}');
+
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final response = await http.put(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(updatedUser.toJson()),
+      );
+
+      if (response.statusCode == 200) {
+        _user = updatedUser;
+        _isLoading = false;
+        notifyListeners();
+        return true;
+      } else {
+        _error = 'Failed to update profile';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      _error = e.toString();
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
   }
 
   Future<bool> register(Map<String, dynamic> userData) async {
@@ -73,9 +104,8 @@ class AuthProvider with ChangeNotifier {
         final Map<String, dynamic> responseData = json.decode(response.body);
         _user = User.fromJson(responseData);
 
-        // ✅ Store the student ID after registration
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('studentId', _user!.id.toString());
+        await prefs.setString('studentId', _user!.studentId);
 
         _isLoading = false;
         notifyListeners();
@@ -94,10 +124,9 @@ class AuthProvider with ChangeNotifier {
     return false;
   }
 
-  void logout() async {
+  Future<void> logout() async {
     _user = null;
 
-    // ✅ Clear student ID from SharedPreferences
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('studentId');
 
@@ -109,7 +138,8 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// ✅ Helper method to retrieve student ID
+
+  /// Helper method to retrieve student ID from shared prefs
   Future<String?> getStudentId() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('studentId');

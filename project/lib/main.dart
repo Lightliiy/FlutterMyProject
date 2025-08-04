@@ -6,6 +6,7 @@ import 'providers/booking_provider.dart';
 import 'providers/chat_provider.dart';
 import 'providers/user_provider.dart';
 import 'providers/notification_provider.dart';
+import 'providers/settings_provider.dart';
 
 import 'screens/splash_screen.dart';
 import 'screens/auth/login_screen.dart';
@@ -25,74 +26,87 @@ void main() {
   runApp(AppEntryPoint());
 }
 
-class AppEntryPoint extends StatefulWidget {
-  @override
-  _AppEntryPointState createState() => _AppEntryPointState();
-}
-
-class _AppEntryPointState extends State<AppEntryPoint> {
-  String? studentId;
-  bool isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadStudentId();
-  }
-
-  Future<void> _loadStudentId() async {
-    final authProvider = AuthProvider();
-    final id = await authProvider.getStudentId();
-    setState(() {
-      studentId = id;
-      isLoading = false;
-    });
-  }
-
+class AppEntryPoint extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    if (isLoading) {
-      return MaterialApp(
-        home: Scaffold(
-          body: Center(child: CircularProgressIndicator()),
-        ),
-      );
-    }
-
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => BookingProvider()),
-        ChangeNotifierProvider(create: (_) => ChatProvider()),
+
+        ChangeNotifierProxyProvider<AuthProvider, ChatProvider>(
+          create: (_) => ChatProvider(),
+          update: (_, authProvider, __) {
+            final userId = authProvider.user?.studentId;
+            return ChatProvider(userId: userId);
+          },
+        ),
+
         ChangeNotifierProvider(create: (_) => UserProvider()),
 
-        if (studentId != null)
-          ChangeNotifierProvider(
-            create: (_) => NotificationProvider(
-              backendBaseUrl: 'https://yourbackend.com/api', // Your backend URL here
-              userId: studentId!,
-            )..initialize(),
+        ChangeNotifierProxyProvider<AuthProvider, NotificationProvider>(
+          create: (_) => NotificationProvider(
+            backendBaseUrl: 'http://10.132.251.181:8080',
+            userId: null,
           ),
+          update: (_, authProvider, notificationProvider) {
+            final userId = authProvider.user?.studentId;
+            if (notificationProvider == null) {
+              return NotificationProvider(
+                backendBaseUrl: 'http://10.132.251.181:8080',
+                userId: userId,
+              )..initialize();
+            }
+            if (notificationProvider.userId != userId) {
+              notificationProvider.userId = userId;
+              notificationProvider.initialize();
+            }
+            return notificationProvider;
+          },
+        ),
+
+        ChangeNotifierProvider(create: (_) => SettingsProvider()),
       ],
-      child: MaterialApp(
-        title: 'Student Counseling System',
-        theme: AppTheme.lightTheme,
-        darkTheme: AppTheme.darkTheme,
-        themeMode: ThemeMode.system,
-        debugShowCheckedModeBanner: false,
-        initialRoute: '/',
-        routes: {
-          '/': (context) => SplashScreen(),
-          '/login': (context) => LoginScreen(),
-          '/register': (context) => RegisterScreen(),
-          '/dashboard': (context) => DashboardScreen(),
-          '/counselors': (context) => CounselorListScreen(),
-          '/booking': (context) => BookingScreen(),
-          '/chats': (context) => ChatListScreen(),
-          '/chat': (context) => ChatScreen(),
-          '/video-call': (context) => VideoCallScreen(),
-          '/profile': (context) => ProfileScreen(),
-          '/notifications': (context) => NotificationsScreen(),
+      child: Consumer<SettingsProvider>(
+        builder: (context, settings, _) {
+          return MaterialApp(
+            title: 'Student Counseling System',
+            theme: AppTheme.lightTheme,
+            darkTheme: AppTheme.darkTheme,
+            themeMode: settings.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+            locale: settings.locale,
+            supportedLocales: const [Locale('en'), Locale('sw')],
+            debugShowCheckedModeBanner: false,
+            initialRoute: '/',
+            routes: {
+              '/': (context) => SplashScreen(),
+              '/login': (context) => LoginScreen(),
+              '/register': (context) => RegisterScreen(),
+              '/dashboard': (context) => DashboardScreen(),
+              '/counselors': (context) => CounselorListScreen(),
+              '/booking': (context) => BookingScreen(),
+              '/chats': (context) => ChatListScreen(),
+              '/video-call': (context) => VideoCallScreen(),
+              '/profile': (context) => ProfileScreen(),
+              '/notifications': (context) => NotificationsScreen(),
+
+              // ✅ Chat route with argument extraction
+              '/chat': (context) {
+                final args = ModalRoute.of(context)!.settings.arguments;
+                if (args is! Chat) {
+                  return Scaffold(
+                    appBar: AppBar(),
+                    body: const Center(child: Text('Invalid chat data')),
+                  );
+                }
+                return ChatScreen(
+                  counselorId: args.counselorId,
+                  chatId: args.id,
+                  counselorName: args.counselorName,
+                );
+              },
+            },
+          );
         },
       ),
     );

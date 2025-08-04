@@ -6,6 +6,7 @@ import '../../providers/user_provider.dart';
 import '../../providers/booking_provider.dart' show BookingProvider;
 import '../../models/booking.dart';
 import '../../models/counselor.dart';
+import 'package:intl/intl.dart'; // Add this import for formatting time
 
 class BookingScreen extends StatefulWidget {
   @override
@@ -104,7 +105,7 @@ class _BookingScreenState extends State<BookingScreen> {
     }
 
     final studentId = userProvider.user?.studentId ?? '';
-    final counselorId = _counselor!.id.toString();  // Convert counselor ID to String
+    final counselorId = _counselor!.id.toString();
 
     if (studentId.isEmpty || counselorId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -168,6 +169,18 @@ class _BookingScreenState extends State<BookingScreen> {
   }
 
   Widget _buildBookingForm(Counselor counselor) {
+    // Filter slots by selected date and format time nicely
+    final filteredSlots = (counselor.availableSlots ?? []).where((slotString) {
+      try {
+        final slotDateTime = DateTime.parse(slotString);
+        return slotDateTime.year == _selectedDate.year &&
+            slotDateTime.month == _selectedDate.month &&
+            slotDateTime.day == _selectedDate.day;
+      } catch (e) {
+        return false;
+      }
+    }).toList();
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Form(
@@ -264,13 +277,15 @@ class _BookingScreenState extends State<BookingScreen> {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: (counselor.availableSlots ?? []).map((slot) {
-                final isSelected = _selectedTimeSlot == slot;
+              children: filteredSlots.map((slotString) {
+                final slotDateTime = DateTime.parse(slotString);
+                final timeFormatted = DateFormat.jm().format(slotDateTime); // e.g., 9:00 AM
+                final isSelected = _selectedTimeSlot == slotString;
                 return ChoiceChip(
-                  label: Text(slot),
+                  label: Text(timeFormatted),
                   selected: isSelected,
                   onSelected: (selected) {
-                    setState(() => _selectedTimeSlot = selected ? slot : '');
+                    setState(() => _selectedTimeSlot = selected ? slotString : '');
                   },
                   selectedColor: Theme.of(context).primaryColor,
                   labelStyle: TextStyle(color: isSelected ? Colors.white : null),

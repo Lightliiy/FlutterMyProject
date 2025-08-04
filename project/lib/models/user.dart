@@ -50,4 +50,29 @@ class User {
       'profileImage': profileImage,
     };
   }
+
+   User copyWith({
+    String? id,
+    String? name,
+    String? email,
+    String? studentId,
+    String? phone,
+    String? department,
+    int? yearLevel,
+    String? password,
+    String? profileImage,
+  }) {
+    return User(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      email: email ?? this.email,
+      studentId: studentId ?? this.studentId,
+      phone: phone ?? this.phone,
+      department: department ?? this.department,
+      yearLevel: yearLevel ?? this.yearLevel,
+      password: password ?? this.password,
+      profileImage: profileImage ?? this.profileImage,
+    );
+  }
 }
+

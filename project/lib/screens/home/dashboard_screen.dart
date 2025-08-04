@@ -13,8 +13,8 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   int _currentIndex = 0;
-  
-   @override
+
+  @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -26,12 +26,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
     });
   }
-  
 
   final List<Widget> _screens = [
     HomeTab(),
     BookingsTab(),
-    ChatsTab(),
+    ChatsTab(), 
     ProfileTab(),
   ];
 
@@ -168,92 +167,9 @@ class HomeTab extends StatelessWidget {
                     },
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _QuickActionCard(
-                    icon: Icons.group,
-                    title: 'Group Support',
-                    subtitle: 'Join community',
-                    onTap: () {
-                      Navigator.pushNamed(context, '/chats');
-                    },
-                  ),
-                ),
               ],
             ),
-            const SizedBox(height: 32),
-
-            // Upcoming Sessions
-            const Text(
-              'Upcoming Sessions',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Consumer<BookingProvider>(
-              builder: (context, bookingProvider, child) {
-                final upcomingBookings = bookingProvider.getBookingsByStatus(BookingStatus.confirmed);
-
-                if (upcomingBookings.isEmpty) {
-                  return Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        children: [
-                          Icon(
-                            Icons.calendar_today,
-                            size: 48,
-                            color: Colors.grey[400],
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'No upcoming sessions',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.grey,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          ElevatedButton(
-                            onPressed: () {
-                              Navigator.pushNamed(context, '/counselors');
-                            },
-                            child: const Text('Book a Session'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }
-
-                return Column(
-                  children: upcomingBookings.take(3).map((booking) {
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: Theme.of(context).primaryColor,
-                          child: const Icon(Icons.person, color: Colors.white),
-                        ),
-                        title: Text(booking.counselorName),
-                        subtitle: Text(
-                          '${booking.scheduledDate.day}/${booking.scheduledDate.month} at ${booking.timeSlot}',
-                        ),
-                        trailing: Chip(
-                          label: Text(
-                            booking.sessionType.name.toUpperCase(),
-                            style: const TextStyle(fontSize: 10),
-                          ),
-                          backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                );
-              },
-            ),
+            // const SizedBox(height: 32),
           ],
         ),
       ),
@@ -314,7 +230,6 @@ class _QuickActionCard extends StatelessWidget {
     );
   }
 }
-
 
 class BookingsTab extends StatelessWidget {
   @override
@@ -407,7 +322,8 @@ class BookingsTab extends StatelessWidget {
                               booking.sessionType.name.toUpperCase(),
                               style: const TextStyle(fontSize: 10),
                             ),
-                            backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
+                            backgroundColor:
+                                Theme.of(context).primaryColor.withOpacity(0.1),
                           ),
                           const SizedBox(width: 8),
                           Chip(
@@ -497,15 +413,21 @@ class _StatusChip extends StatelessWidget {
       case BookingStatus.pending:
         color = Colors.orange;
         break;
-      case BookingStatus.confirmed:
+      case BookingStatus.approve:
         color = Colors.green;
         break;
-      case BookingStatus.completed:
+      case BookingStatus.confirmed:
         color = Colors.blue;
         break;
       case BookingStatus.cancelled:
         color = Colors.red;
         break;
+        case BookingStatus.ESCALATED_TO_HOD:
+      color = Colors.deepPurple;
+      break;
+    case BookingStatus.ESCALATED_TO_ADMIN:
+      color = Colors.brown; 
+      break;
     }
 
     return Chip(
@@ -522,38 +444,64 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
-class ChatsTab extends StatelessWidget {
+class ChatsTab extends StatefulWidget {
+  @override
+  _ChatsTabState createState() => _ChatsTabState();
+}
+
+class _ChatsTabState extends State<ChatsTab> {
+  @override
+  void initState() {
+    super.initState();
+    // Trigger loading chats when the screen is first built
+   Future.microtask(() {
+  final authProvider = Provider.of<AuthProvider>(context, listen: false);
+  Provider.of<ChatProvider>(context, listen: false).loadChats(authProvider);
+});
+
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Chats'),
-      ),
+      appBar: AppBar(title: const Text('Chats')),
       body: Consumer<ChatProvider>(
         builder: (context, chatProvider, child) {
+          if (chatProvider.isLoading) {
+            return Center(child: CircularProgressIndicator());
+          }
+          if (chatProvider.chats.isEmpty) {
+            return Center(
+              child: Text(
+                'No chats available. Start by booking a counseling session!',
+                style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                textAlign: TextAlign.center,
+              ),
+            );
+          }
           return ListView.builder(
-            itemCount: chatProvider.chatRooms.length,
+            itemCount: chatProvider.chats.length,
             itemBuilder: (context, index) {
-              final chatRoom = chatProvider.chatRooms[index];
+              final chat = chatProvider.chats[index];
               return ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: chatRoom.isGroup ? Colors.blue : Theme.of(context).primaryColor,
-                  child: Icon(
-                    chatRoom.isGroup ? Icons.group : Icons.person,
-                    color: Colors.white,
+                  backgroundColor: Theme.of(context).primaryColor,
+                  child: Text(
+                    chat.name.isNotEmpty ? chat.name[0].toUpperCase() : '?',
+                    style: const TextStyle(color: Colors.white),
                   ),
                 ),
-                title: Text(chatRoom.name),
-                subtitle: Text(chatRoom.lastMessage ?? 'No messages yet'),
+                title: Text(chat.name),
+                subtitle: Text(chat.lastMessage ?? 'No messages yet'),
                 trailing: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    if (chatRoom.lastMessageTime != null)
+                    if (chat.lastMessageTime != null)
                       Text(
-                        '${chatRoom.lastMessageTime!.hour}:${chatRoom.lastMessageTime!.minute.toString().padLeft(2, '0')}',
+                        '${chat.lastMessageTime!.hour}:${chat.lastMessageTime!.minute.toString().padLeft(2, '0')}',
                         style: const TextStyle(fontSize: 12),
                       ),
-                    if (chatRoom.unreadCount > 0)
+                    if (chat.unreadCount > 0)
                       Container(
                         margin: const EdgeInsets.only(top: 4),
                         padding: const EdgeInsets.all(4),
@@ -562,7 +510,7 @@ class ChatsTab extends StatelessWidget {
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
-                          '${chatRoom.unreadCount}',
+                          '${chat.unreadCount}',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 10,
@@ -575,7 +523,7 @@ class ChatsTab extends StatelessWidget {
                   Navigator.pushNamed(
                     context,
                     '/chat',
-                    arguments: chatRoom,
+                    arguments: chat,
                   );
                 },
               );
@@ -660,10 +608,9 @@ class ProfileTab extends StatelessWidget {
                     ),
                     const Divider(),
                     _ProfileItem(
-                      icon: Icons.calendar_today,
-                      title: 'Year',
-                      value: user?.yearLevel.toString() ?? ''
-                    ),
+                        icon: Icons.calendar_today,
+                        title: 'Year',
+                        value: user?.yearLevel.toString() ?? ''),
                   ],
                 ),
               ),
@@ -685,7 +632,8 @@ class ProfileTab extends StatelessWidget {
                         ),
                         ElevatedButton(
                           onPressed: () {
-                            Provider.of<AuthProvider>(context, listen: false).logout();
+                            Provider.of<AuthProvider>(context, listen: false)
+                                .logout();
                             Navigator.pushNamedAndRemoveUntil(
                               context,
                               '/login',
@@ -723,8 +671,6 @@ class _ProfileItem extends StatelessWidget {
     required this.title,
     required this.value,
   });
-
-  
 
   @override
   Widget build(BuildContext context) {

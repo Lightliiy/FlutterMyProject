@@ -1,8 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../providers/notification_provider.dart';
+import '../../providers/notification_provider.dart';// Make sure you import your model here
 
-class NotificationsScreen extends StatelessWidget {
+class NotificationsScreen extends StatefulWidget {
+  @override
+  State<NotificationsScreen> createState() => _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends State<NotificationsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    Provider.of<NotificationProvider>(context, listen: false).fetchNotifications();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -46,18 +57,12 @@ class NotificationsScreen extends StatelessWidget {
                   const SizedBox(height: 16),
                   const Text(
                     'No notifications',
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: Colors.grey,
-                    ),
+                    style: TextStyle(fontSize: 18, color: Colors.grey),
                   ),
                   const SizedBox(height: 8),
                   const Text(
                     'You\'re all caught up!',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey,
-                    ),
+                    style: TextStyle(fontSize: 14, color: Colors.grey),
                   ),
                 ],
               ),
@@ -82,15 +87,25 @@ class NotificationsScreen extends StatelessWidget {
                   title: Text(
                     notification.title,
                     style: TextStyle(
-                      fontWeight: notification.isRead 
-                          ? FontWeight.normal 
-                          : FontWeight.bold,
+                      fontWeight: notification.isRead ? FontWeight.normal : FontWeight.bold,
                     ),
                   ),
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(notification.message),
+                      if (notification.reply?.isNotEmpty ?? false)
+
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4.0),
+                          child: Text(
+                            'Reply: ${notification.reply}',
+                            style: TextStyle(
+                              fontStyle: FontStyle.italic,
+                              color: Colors.grey[700],
+                            ),
+                          ),
+                        ),
                       const SizedBox(height: 4),
                       Text(
                         _formatTime(notification.timestamp),
@@ -115,7 +130,7 @@ class NotificationsScreen extends StatelessWidget {
                     if (!notification.isRead) {
                       notificationProvider.markAsRead(notification.id);
                     }
-                    _handleNotificationTap(context, notification);
+                    _showNotificationDetailsDialog(context, notification);
                   },
                 ),
               );
@@ -171,24 +186,53 @@ class NotificationsScreen extends StatelessWidget {
     }
   }
 
-  void _handleNotificationTap(BuildContext context, NotificationItem notification) {
-    switch (notification.type) {
-      case 'booking':
-        Navigator.pushNamed(context, '/dashboard');
-        break;
-      case 'message':
-        Navigator.pushNamed(context, '/chats');
-        break;
-      case 'reminder':
-        Navigator.pushNamed(context, '/dashboard');
-        break;
-      case 'escalation':
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Your issue has been escalated to the HOD'),
+  void _showNotificationDetailsDialog(BuildContext context, NotificationItem notification) {
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(notification.title),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(notification.message),
+          const SizedBox(height: 8),
+          if (notification.reply?.isNotEmpty ?? false)
+            Text(
+              'Reply: ${notification.reply}',
+              style: TextStyle(
+                fontStyle: FontStyle.italic,
+                color: Colors.green[700],
+              ),
+            ),
+          const SizedBox(height: 8),
+          Text(
+            _formatTime(notification.timestamp),
+            style: TextStyle(fontSize: 12, color: Colors.grey),
           ),
-        );
-        break;
-    }
-  }
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+        TextButton(
+          onPressed: () {
+            Provider.of<NotificationProvider>(context, listen: false)
+                .deleteNotification(notification.id);
+            Navigator.pop(context); // Close the dialog
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Notification deleted')),
+            );
+          },
+          child: const Text(
+            'Delete',
+            style: TextStyle(color: Colors.red),
+          ),
+        ),
+      ],
+    ),
+  );
+}
 }

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/settings_provider.dart';
 
 class ProfileScreen extends StatefulWidget {
+  const ProfileScreen({Key? key}) : super(key: key);
   @override
   _ProfileScreenState createState() => _ProfileScreenState();
 }
@@ -22,6 +24,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     'Medicine',
     'Law',
     'Arts & Humanities',
+    'Tourism',
   ];
 
   final List<String> _years = [
@@ -36,11 +39,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     final user = Provider.of<AuthProvider>(context, listen: false).user;
+
     _nameController = TextEditingController(text: user?.name ?? '');
     _emailController = TextEditingController(text: user?.email ?? '');
     _phoneController = TextEditingController(text: user?.phone ?? '');
-    _selectedDepartment = user?.department ?? _departments.first;
-   _selectedYear = _years[(user?.yearLevel ?? 1) - 1];
+
+    if (user != null && _departments.contains(user.department)) {
+      _selectedDepartment = user.department!;
+    } else {
+      _selectedDepartment = _departments.first;
+    }
+
+    if (user != null &&
+        user.yearLevel != null &&
+        user.yearLevel! > 0 &&
+        user.yearLevel! <= _years.length) {
+      _selectedYear = _years[user.yearLevel! - 1];
+    } else {
+      _selectedYear = _years.first;
+    }
   }
 
   @override
@@ -51,9 +68,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.dispose();
   }
 
-  void _saveProfile() {
-    if (_formKey.currentState!.validate()) {
-      // In a real app, this would update the user profile via API
+  Future<void> _saveProfile() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final user = authProvider.user;
+
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No user logged in'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Create updated user object
+    final updatedUser = user.copyWith(
+      name: _nameController.text,
+      email: _emailController.text,
+      phone: _phoneController.text,
+      department: _selectedDepartment,
+      yearLevel: _years.indexOf(_selectedYear) + 1,
+    );
+
+    final success = await authProvider.updateStudentProfile(updatedUser);
+
+    if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Profile updated successfully!'),
@@ -61,12 +103,52 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       );
       Navigator.pop(context);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(authProvider.error ?? 'Failed to update profile'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
+  }
+
+  void _showDeleteAccountDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Account'),
+        content: const Text(
+          'Are you sure you want to delete your account? This action cannot be undone and all your data will be permanently lost.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              // Implement your delete account logic here
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Account deletion requested'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final user = Provider.of<AuthProvider>(context).user;
+    final settings = Provider.of<SettingsProvider>(context);
 
     return Scaffold(
       appBar: AppBar(
@@ -113,7 +195,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       child: IconButton(
                         icon: const Icon(Icons.camera_alt, color: Colors.white),
                         onPressed: () {
-                          // Image picker functionality
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text('Image picker coming soon'),
@@ -226,9 +307,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       leading: const Icon(Icons.notifications),
                       title: const Text('Notifications'),
                       trailing: Switch(
-                        value: true,
+                        value: settings.notificationsEnabled,
                         onChanged: (value) {
-                          // Toggle notifications
+                          settings.toggleNotifications(value);
                         },
                       ),
                     ),
@@ -237,21 +318,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       leading: const Icon(Icons.dark_mode),
                       title: const Text('Dark Mode'),
                       trailing: Switch(
-                        value: false,
+                        value: settings.isDarkMode,
                         onChanged: (value) {
-                          // Toggle dark mode
+                          settings.toggleDarkMode(value);
                         },
                       ),
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.language),
-                      title: const Text('Language'),
-                      subtitle: const Text('English'),
-                      trailing: const Icon(Icons.arrow_forward_ios),
-                      onTap: () {
-                        // Language selection
-                      },
                     ),
                   ],
                 ),
@@ -280,38 +351,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  void _showDeleteAccountDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Account'),
-        content: const Text(
-          'Are you sure you want to delete your account? This action cannot be undone and all your data will be permanently lost.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              // Delete account logic
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Account deletion requested'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
       ),
     );
   }
