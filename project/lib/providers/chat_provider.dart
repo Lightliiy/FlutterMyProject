@@ -1,11 +1,8 @@
-import 'dart:convert';
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:stomp_dart_client/stomp.dart';
-import 'package:stomp_dart_client/stomp_config.dart';
-import 'package:stomp_dart_client/stomp_frame.dart';
-
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'auth_provider.dart';
 
 class Chat {
@@ -18,7 +15,6 @@ class Chat {
   final String? lastMessage;
   final DateTime? lastMessageTime;
   final int unreadCount;
-  final List<ChatMessage> messages;
 
   Chat({
     required this.id,
@@ -30,40 +26,21 @@ class Chat {
     this.lastMessage,
     this.lastMessageTime,
     this.unreadCount = 0,
-    required this.messages,
   });
 
   factory Chat.fromJson(Map<String, dynamic> json) {
-    List<ChatMessage> parsedMessages = [];
-
-    if (json['messages'] != null && json['messages'] is List) {
-      parsedMessages = (json['messages'] as List)
-          .map((e) => ChatMessage(
-                id: e['id'].toString(),
-                senderId: e['senderId'].toString(),
-                senderName: e['senderName'] ?? '',
-                message: e['content'] ?? '',
-                timestamp: DateTime.parse(e['timestamp']),
-                isMe: false,
-              ))
-          .toList();
-    }
-
-    ChatMessage? lastMsg = parsedMessages.isNotEmpty ? parsedMessages.last : null;
-
     return Chat(
       id: json['id'].toString(),
       counselorId: json['counselorId'].toString(),
-      counselorName: json['counselorName']?.toString().isNotEmpty == true
-          ? json['counselorName']
-          : 'Counselor ${json['counselorId']}',
+      counselorName: json['counselorName'] ?? 'Counselor',
       studentId: json['studentId'].toString(),
-      name: json['counselorName'] ?? 'Chat with ${json['studentId']}',
+      name: json['counselorName'] ?? 'Chat',
       createdAt: DateTime.parse(json['createdAt']),
-      lastMessage: lastMsg?.message,
-      lastMessageTime: lastMsg?.timestamp,
+      lastMessage: json['lastMessage'],
+      lastMessageTime: json['lastMessageTime'] != null
+          ? DateTime.parse(json['lastMessageTime'])
+          : null,
       unreadCount: json['unreadCount'] ?? 0,
-      messages: parsedMessages,
     );
   }
 }
@@ -87,28 +64,26 @@ class ChatMessage {
     this.reply,
   });
 
-  factory ChatMessage.fromJson(Map<String, dynamic> json, String currentUserId) {
+  factory ChatMessage.fromFirestore(
+      DocumentSnapshot<Map<String, dynamic>> doc, String currentUserId) {
+    final data = doc.data()!;
     return ChatMessage(
-      id: (json['id'] ?? '').toString(),
-      senderId: (json['senderId'] ?? '').toString(),
-      senderName: json['senderName'] ?? '',
-      message: json['content'] ?? '',
-      timestamp: json['timestamp'] != null
-          ? DateTime.parse(json['timestamp'])
-          : DateTime.now(),
-      isMe: (json['senderId'] ?? '').toString() == currentUserId,
-      reply: json['reply'],
+      id: doc.id,
+      senderId: data['senderId'].toString(),
+      senderName: data['senderName'] ?? '',
+      message: data['content'] ?? '',
+      timestamp: (data['timestamp'] as Timestamp).toDate(),
+      isMe: data['senderId'].toString() == currentUserId,
+      reply: data['reply'],
     );
   }
 
-  Map<String, dynamic> toJson() {
+  Map<String, dynamic> toFirestore() {
     return {
-      'id': id,
       'senderId': senderId,
       'senderName': senderName,
-      'message': message,
-      'timestamp': timestamp.toIso8601String(),
-      'isMe': isMe,
+      'content': message,
+      'timestamp': timestamp,
       'reply': reply,
     };
   }
@@ -116,67 +91,25 @@ class ChatMessage {
 
 class ChatProvider with ChangeNotifier {
   final String? userId;
-  static const String _baseUrl = 'http://10.132.251.181:8080/api/chats';
+  static const String _baseUrl = 'http://10.192.163.181:8080/api/chats';
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   List<Chat> _chats = [];
   List<ChatMessage> _messages = [];
   bool _isLoading = false;
-
-  StompClient? _stompClient;
+  StreamSubscription<QuerySnapshot>? _chatSubscription;
+  StreamSubscription<QuerySnapshot>? _messageSubscription;
 
   List<Chat> get chats => _chats;
   List<ChatMessage> get messages => _messages;
   bool get isLoading => _isLoading;
 
-  ChatProvider({this.userId}) {
-    _connectWebSocket();
-  }
-
-  void _connectWebSocket() {
-    _stompClient = StompClient(
-      config: StompConfig.SockJS(
-        url: 'http://10.132.251.181:8080/ws-chat',
-        onConnect: _onStompConnected,
-        onWebSocketError: (error) {
-          print('WebSocket error: $error');
-        },
-        onDisconnect: (_) {
-          print('WebSocket disconnected');
-        },
-      ),
-    );
-    _stompClient!.activate();
-  }
-
-  void _onStompConnected(StompFrame frame) {
-    print('STOMP Connected');
-    // Do not subscribe here directly since chatId is unknown
-  }
-
-  void subscribeToChatTopic(String chatId) {
-    if (_stompClient?.connected != true) {
-      print('WebSocket not connected. Cannot subscribe.');
-      return;
-    }
-
-    _stompClient!.subscribe(
-      destination: '/topic/chat/$chatId',
-      callback: (frame) {
-        if (frame.body != null) {
-          final data = jsonDecode(frame.body!);
-          final newMessage = ChatMessage.fromJson(data, userId!);
-          _messages.add(newMessage);
-          notifyListeners();
-        }
-      },
-    );
-
-    print('Subscribed to /topic/chat/$chatId');
-  }
+  ChatProvider({this.userId});
 
   @override
   void dispose() {
-    _stompClient?.deactivate();
+    _chatSubscription?.cancel();
+    _messageSubscription?.cancel();
     super.dispose();
   }
 
@@ -198,6 +131,7 @@ class ChatProvider with ChangeNotifier {
         final List<dynamic> body = json.decode(response.body);
         _chats = body.map((e) => Chat.fromJson(e)).toList();
       } else {
+        _chats = [];
         throw Exception(
             'Failed to load assigned counselor chats: ${response.statusCode}');
       }
@@ -218,9 +152,7 @@ class ChatProvider with ChangeNotifier {
 
       if (response.statusCode == 200 || response.statusCode == 204) {
         _chats.removeWhere((chat) => chat.id == chatId);
-        if (_messages.isNotEmpty) {
-          _messages.clear();
-        }
+        _messages.clear();
         notifyListeners();
       } else {
         throw Exception('Failed to delete chat: ${response.statusCode}');
@@ -231,21 +163,15 @@ class ChatProvider with ChangeNotifier {
     }
   }
 
-  Future<Chat?> getOrCreateChat(
-      String counselorId, String studentId, String counselorName) async {
+  Future<String?> getOrCreateChat(String counselorId, String studentId, String counselorName) async {
     try {
       final response = await http.get(
         Uri.parse(
             '$_baseUrl/between?counselorId=$counselorId&studentId=$studentId&counselorName=$counselorName'),
       );
-
       if (response.statusCode == 200) {
         final chat = Chat.fromJson(json.decode(response.body));
-
-        // ✅ Subscribe to shared chatId topic
-        subscribeToChatTopic(chat.id);
-
-        return chat;
+        return chat.id;
       }
     } catch (e) {
       print('Error getting or creating chat: $e');
@@ -253,32 +179,30 @@ class ChatProvider with ChangeNotifier {
     return null;
   }
 
-  Future<void> loadMessages(String chatId, String currentUserId) async {
-    print("Loading messages for chatId=$chatId, userId=$currentUserId");
+  void listenToMessages(String chatId, String currentUserId) {
+    _messageSubscription?.cancel();
+    _messages.clear();
     _isLoading = true;
     notifyListeners();
 
-    try {
-      final response = await http.get(Uri.parse('$_baseUrl/$chatId/messages'));
-      print('Response status: ${response.statusCode}');
-      print('Response body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        final rawMessages = jsonDecode(response.body) as List;
-        _messages =
-            rawMessages.map((json) => ChatMessage.fromJson(json, currentUserId)).toList();
-        print('Loaded ${_messages.length} messages');
-      } else {
-        _messages = [];
-        print('Failed to load messages: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error loading messages: $e');
+    _messageSubscription = _firestore
+        .collection('chats')
+        .doc(chatId)
+        .collection('messages')
+        .orderBy('timestamp')
+        .snapshots()
+        .listen((snapshot) {
+      _messages = snapshot.docs
+          .map((doc) => ChatMessage.fromFirestore(doc, currentUserId))
+          .toList();
+      _isLoading = false;
+      notifyListeners();
+    }, onError: (error) {
+      print('Error listening to messages: $error');
       _messages = [];
-    }
-
-    _isLoading = false;
-    notifyListeners();
+      _isLoading = false;
+      notifyListeners();
+    });
   }
 
   Future<void> sendMessage(
@@ -286,12 +210,9 @@ class ChatProvider with ChangeNotifier {
     String message,
     String currentUserId,
     String currentUserName,
-    String counselorId,
-    String studentId,
-    String counselorName,
   ) async {
     final newMessage = ChatMessage(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: '',
       senderId: currentUserId,
       senderName: currentUserName,
       message: message,
@@ -299,34 +220,14 @@ class ChatProvider with ChangeNotifier {
       isMe: true,
     );
 
-    _messages.add(newMessage);
-    notifyListeners();
-
     try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl/$chatId/messages'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'senderId': currentUserId,
-          'content': message,
-          'counselorId': counselorId,
-          'studentId': studentId,
-          'counselorName': counselorName,
-        }),
-      );
-
-      if (response.statusCode == 201) {
-        final sentMessage =
-            ChatMessage.fromJson(json.decode(response.body), currentUserId);
-        final index = _messages.indexWhere((msg) => msg.id == newMessage.id);
-        if (index != -1) _messages[index] = sentMessage;
-      } else {
-        throw Exception('Failed to send message: ${response.statusCode}');
-      }
+      await _firestore
+          .collection('chats')
+          .doc(chatId)
+          .collection('messages')
+          .add(newMessage.toFirestore());
     } catch (e) {
       print('Error sending message: $e');
-    } finally {
-      notifyListeners();
     }
   }
 }

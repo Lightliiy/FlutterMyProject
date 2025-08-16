@@ -9,7 +9,8 @@ class NotificationItem {
   final DateTime timestamp;
   final bool isRead;
   final String type;
-  final String? reply;  // Added reply field
+  final String? reply;
+  final String? userId; 
 
   NotificationItem({
     required this.id,
@@ -19,6 +20,7 @@ class NotificationItem {
     this.isRead = false,
     required this.type,
     this.reply,
+    this.userId, 
   });
 
   NotificationItem copyWith({
@@ -29,6 +31,7 @@ class NotificationItem {
     bool? isRead,
     String? type,
     String? reply,
+    String? userId, 
   }) {
     return NotificationItem(
       id: id ?? this.id,
@@ -38,6 +41,7 @@ class NotificationItem {
       isRead: isRead ?? this.isRead,
       type: type ?? this.type,
       reply: reply ?? this.reply,
+      userId: userId ?? this.userId,
     );
   }
 
@@ -50,18 +54,20 @@ class NotificationItem {
       isRead: json['read'] ?? false,
       type: json['type'],
       reply: json['reply'],
+      userId: json['userId'], 
     );
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'message': message,
-        'timestamp': timestamp.toIso8601String(),
-        'isRead': isRead,
-        'type': type,
-        'reply': reply,
-      };
+    'id': id,
+    'title': title,
+    'message': message,
+    'timestamp': timestamp.toIso8601String(),
+    'isRead': isRead,
+    'type': type,
+    'reply': reply,
+    'userId': userId, 
+  };
 }
 
 class NotificationProvider with ChangeNotifier {
@@ -71,25 +77,26 @@ class NotificationProvider with ChangeNotifier {
 
   final String backendBaseUrl;
   String? _userId;
-  String? get userId => _userId;
-  set userId(String? value) {
-    _userId = value;
-    initialize(); // Automatically fetch when userId changes
-  }
 
   NotificationProvider({
     required this.backendBaseUrl,
-    required String? userId,
-  }) : _userId = userId {
-    initialize();
-  }
+    String? userId, // userId can be passed during initialization
+  }) : _userId = userId;
 
-  Future<void> initialize() async {
-    if (userId == null || userId!.isEmpty) {
-      print('Skipping notification fetch: userId is null or empty.');
-      return;
+  String? get userId => _userId;
+  // ✅ UPDATED: Set a new user ID and refresh notifications
+  set userId(String? value) {
+    if (_userId != value) {
+      _userId = value;
+      // Fetch new notifications if the user changes
+      if (_userId != null) {
+        fetchNotifications();
+      } else {
+        // Clear notifications if the user logs out
+        _notifications.clear();
+        notifyListeners();
+      }
     }
-    await fetchNotifications();
   }
 
   Future<void> fetchNotifications() async {
@@ -118,26 +125,32 @@ class NotificationProvider with ChangeNotifier {
   }
 
   /// Deletes a notification from backend and removes it locally
-Future<void> deleteNotification(String notificationId) async {
-  final url = Uri.parse('$backendBaseUrl/notifications/$notificationId');
+  Future<void> deleteNotification(String notificationId) async {
+    final url = Uri.parse('$backendBaseUrl/notifications/$notificationId');
 
-  try {
-    final response = await http.delete(url);
+    try {
+      final response = await http.delete(url);
 
-    if (response.statusCode == 200 || response.statusCode == 204) {
-      _notifications.removeWhere((n) => n.id == notificationId);
-      notifyListeners();
-      print('Notification $notificationId deleted successfully.');
-    } else {
-      print('Failed to delete notification: ${response.statusCode}');
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        _notifications.removeWhere((n) => n.id == notificationId);
+        notifyListeners();
+        print('Notification $notificationId deleted successfully.');
+      } else {
+        print('Failed to delete notification: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error deleting notification: $e');
     }
-  } catch (e) {
-    print('Error deleting notification: $e');
   }
-}
 
-
+  // ✅ UPDATED: The sendNotification method now correctly handles a notification with a userId.
   Future<bool> sendNotification(NotificationItem notification) async {
+    // Ensure the notification has a userId before sending
+    if (notification.userId == null || notification.userId!.isEmpty) {
+      print('Error: Notification must have a userId to be sent.');
+      return false;
+    }
+
     try {
       final response = await http.post(
         Uri.parse('$backendBaseUrl/notifications'),
@@ -145,7 +158,10 @@ Future<void> deleteNotification(String notificationId) async {
         body: jsonEncode(notification.toJson()),
       );
       if (response.statusCode == 201 || response.statusCode == 200) {
-        addNotification(notification);
+        // Add the notification to the local list if it's for the current user
+        if (notification.userId == _userId) {
+          addNotification(notification);
+        }
         return true;
       } else {
         print('Failed to send notification: ${response.statusCode}');
@@ -176,38 +192,49 @@ Future<void> deleteNotification(String notificationId) async {
       notifyListeners();
     }
   }
+  
 
-  Future<void> addBookingCancellationNotification(
-    String bookingId, String counselorName, DateTime scheduledDate) async {
-  final cancellationNotification = NotificationItem(
-    id: bookingId,
-    title: 'Booking Cancelled',
-    message: 'Your session with $counselorName on ${scheduledDate.day}/${scheduledDate.month} has been cancelled.',
-    timestamp: DateTime.now(),
-    type: 'booking_cancellation',
-    isRead: false,
-  );
-
-  await sendNotification(cancellationNotification);
-}
-
-
-  void clearAllNotifications() {
-    _notifications.clear();
-    notifyListeners();
+  /// Creates a cancellation notification and sends it to the specified student
+  Future<void> addBookingCancellationNotification({
+    required String studentId,
+    required String bookingId,
+    required String counselorName,
+    required DateTime scheduledDate,
+  }) async {
+    final cancellationNotification = NotificationItem(
+      id: bookingId,
+      userId: studentId, 
+      title: 'Booking Cancelled',
+      message: 'Your session with $counselorName on ${scheduledDate.day}/${scheduledDate.month} has been cancelled.',
+      timestamp: DateTime.now(),
+      type: 'booking_cancellation',
+      isRead: false,
+    );
+    await sendNotification(cancellationNotification);
   }
 
-  Future<void> addBookingNotification(String bookingId, String counselorName, DateTime scheduledDate) async {
+  /// Creates a confirmation notification and sends it to the specified student
+  Future<void> addBookingNotification({
+    required String studentId,
+    required String bookingId,
+    required String counselorName,
+    required DateTime scheduledDate,
+  }) async {
     final newNotification = NotificationItem(
       id: bookingId,
+      userId: studentId, 
       title: 'Booking Confirmed',
       message: 'Your session with $counselorName on ${scheduledDate.day}/${scheduledDate.month} is confirmed.',
       timestamp: DateTime.now(),
       type: 'booking',
       isRead: false,
     );
-
     await sendNotification(newNotification);
+  }
+
+  void clearAllNotifications() {
+    _notifications.clear();
+    notifyListeners();
   }
 
   /// Send a reply for a notification
@@ -220,7 +247,6 @@ Future<void> deleteNotification(String notificationId) async {
       );
 
       if (response.statusCode == 200) {
-        // Update local notification with reply
         final index = _notifications.indexWhere((n) => n.id == notificationId);
         if (index != -1) {
           _notifications[index] = _notifications[index].copyWith(reply: replyMessage);

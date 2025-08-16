@@ -17,7 +17,7 @@ enum BookingStatus {
   cancelled,
   approve,
   ESCALATED_TO_HOD,
-  ESCALATED_TO_ADMIN, 
+  ESCALATED_TO_ADMIN, archived,
 }
 
 extension SessionTypeExtension on SessionType {
@@ -40,8 +40,9 @@ class Booking {
   final String timeSlot;
   final BookingStatus status;
   final List<String> attachments;
+  // isEscalated is a temporary UI state, not a persistent model field.
+  // It is used to show a loading indicator.
   final bool isEscalated;
-  final bool isEscalatedToHOD; // ✅ NEW field
   final String? feedback;
 
   Booking({
@@ -57,7 +58,6 @@ class Booking {
     required this.status,
     required this.attachments,
     this.isEscalated = false,
-    this.isEscalatedToHOD = false, // ✅ default false
     this.feedback,
   });
 
@@ -82,8 +82,7 @@ class Booking {
       attachments: json['attachments'] != null
           ? List<String>.from(json['attachments'])
           : [],
-      isEscalated: json['isEscalated'] ?? false,
-      isEscalatedToHOD: json['isEscalatedToHOD'] ?? false, // ✅ Added
+      isEscalated: false,
       feedback: json['feedback'],
     );
   }
@@ -101,7 +100,6 @@ class Booking {
     BookingStatus? status,
     List<String>? attachments,
     bool? isEscalated,
-    bool? isEscalatedToHOD, // ✅ Added to copyWith
     String? feedback,
   }) {
     return Booking(
@@ -117,7 +115,6 @@ class Booking {
       status: status ?? this.status,
       attachments: attachments ?? this.attachments,
       isEscalated: isEscalated ?? this.isEscalated,
-      isEscalatedToHOD: isEscalatedToHOD ?? this.isEscalatedToHOD, // ✅
       feedback: feedback ?? this.feedback,
     );
   }

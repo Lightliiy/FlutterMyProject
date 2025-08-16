@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:project/providers/chat_provider.dart';
-import '../../providers/auth_provider.dart';
-import '../../providers/booking_provider.dart';
-import '../../providers/notification_provider.dart';
-import '../../models/booking.dart';
+import 'package:project/providers/auth_provider.dart';
+import 'package:project/providers/booking_provider.dart';
+import 'package:project/providers/notification_provider.dart';
+import 'package:project/models/booking.dart';
 
 class DashboardScreen extends StatefulWidget {
   @override
@@ -13,6 +14,13 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   int _currentIndex = 0;
+
+  List<Widget> get _screens => [
+    HomeTab(),
+    BookingsTab(),
+    ChatsTab(),
+    ProfileTab(),
+  ];
 
   @override
   void initState() {
@@ -26,13 +34,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
     });
   }
-
-  final List<Widget> _screens = [
-    HomeTab(),
-    BookingsTab(),
-    ChatsTab(), 
-    ProfileTab(),
-  ];
 
   @override
   Widget build(BuildContext context) {
@@ -69,7 +70,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
+
 class HomeTab extends StatelessWidget {
+  const HomeTab({Key? key}) : super(key: key);
+
   @override
   Widget build(BuildContext context) {
     final user = Provider.of<AuthProvider>(context).user;
@@ -120,7 +124,6 @@ class HomeTab extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Quick Actions
             const Text(
               'Quick Actions',
               style: TextStyle(
@@ -154,22 +157,6 @@ class HomeTab extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _QuickActionCard(
-                    icon: Icons.video_call,
-                    title: 'Video Call',
-                    subtitle: 'Face-to-face session',
-                    onTap: () {
-                      Navigator.pushNamed(context, '/video-call');
-                    },
-                  ),
-                ),
-              ],
-            ),
-            // const SizedBox(height: 32),
           ],
         ),
       ),
@@ -234,12 +221,18 @@ class _QuickActionCard extends StatelessWidget {
 class BookingsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Bookings'),
       ),
       body: Consumer<BookingProvider>(
         builder: (context, bookingProvider, child) {
+          if (bookingProvider.isLoading && bookingProvider.bookings.isEmpty) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
           if (bookingProvider.bookings.isEmpty) {
             return Center(
               child: Column(
@@ -277,97 +270,145 @@ class BookingsTab extends StatelessWidget {
               final booking = bookingProvider.bookings[index];
               return Card(
                 margin: const EdgeInsets.only(bottom: 12),
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Counselor Name and Delete Icon
                       Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Expanded(
                             child: Text(
                               booking.counselorName,
                               style: const TextStyle(
-                                fontSize: 16,
+                                fontSize: 18,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                           ),
-                          _StatusChip(status: booking.status),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, color: Colors.red),
+                            onPressed: () {
+                              showDialog(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  title: const Text('Cancel Booking'),
+                                  content: const Text(
+                                    'Are you sure you want to cancel this booking? This action cannot be undone.',
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.of(ctx).pop(),
+                                      child: const Text('No'),
+                                    ),
+                                    ElevatedButton(
+                                      onPressed: () async {
+                                        Navigator.of(ctx).pop();
+                                        try {
+                                          await bookingProvider.archiveBooking(
+                                              booking.id, authProvider.user!.studentId);
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(
+                                                content: Text('Booking successfully canceled.')),
+                                          );
+                                        } catch (e) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(
+                                                content: Text('Failed to cancel booking.')),
+                                          );
+                                        }
+                                      },
+                                      child: const Text('Yes'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
                         ],
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 12),
+
+                      // Status Chip
+                      _StatusChip(status: booking.status),
+                      const SizedBox(height: 12),
+
+                      // Date and Time
                       Row(
                         children: [
                           Icon(Icons.calendar_today, size: 16, color: Colors.grey[600]),
-                          const SizedBox(width: 4),
+                          const SizedBox(width: 8),
                           Text(
-                            '${booking.scheduledDate.day}/${booking.scheduledDate.month}/${booking.scheduledDate.year}',
-                            style: TextStyle(color: Colors.grey[600]),
+                            DateFormat('EEEE, MMM d, yyyy').format(booking.scheduledDate),
+                            style: TextStyle(color: Colors.grey[700]),
                           ),
                           const SizedBox(width: 16),
                           Icon(Icons.access_time, size: 16, color: Colors.grey[600]),
-                          const SizedBox(width: 4),
+                          const SizedBox(width: 8),
                           Text(
                             booking.timeSlot,
-                            style: TextStyle(color: Colors.grey[600]),
+                            style: TextStyle(color: Colors.grey[700]),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      Row(
+                      const SizedBox(height: 12),
+
+                      // Session and Issue Type Chips
+                      Wrap(
+                        spacing: 8,
                         children: [
                           Chip(
                             label: Text(
                               booking.sessionType.name.toUpperCase(),
-                              style: const TextStyle(fontSize: 10),
+                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
                             ),
                             backgroundColor:
                                 Theme.of(context).primaryColor.withOpacity(0.1),
                           ),
-                          const SizedBox(width: 8),
                           Chip(
                             label: Text(
                               booking.issueType.name.replaceAll('_', ' ').toUpperCase(),
-                              style: const TextStyle(fontSize: 10),
+                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
                             ),
                             backgroundColor: Colors.blue.withOpacity(0.1),
                           ),
                         ],
                       ),
+
                       if (booking.description.isNotEmpty) ...[
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 12),
                         Text(
                           booking.description,
                           style: TextStyle(color: Colors.grey[700]),
                         ),
                       ],
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 16),
+
+                      // Action Buttons
                       Row(
                         children: [
                           if (booking.status == BookingStatus.confirmed) ...[
                             Expanded(
                               child: OutlinedButton.icon(
-                                onPressed: () {
-                                  if (booking.sessionType == SessionType.video) {
-                                    Navigator.pushNamed(context, '/video-call');
-                                  } else if (booking.sessionType == SessionType.chat) {
-                                    Navigator.pushNamed(context, '/chat');
-                                  }
-                                },
+                                onPressed: () {}, // Implement join logic
                                 icon: Icon(
                                   booking.sessionType == SessionType.video
                                       ? Icons.video_call
-                                      : booking.sessionType == SessionType.chat
-                                          ? Icons.chat
-                                          : Icons.location_on,
+                                      : Icons.location_on,
                                 ),
                                 label: Text(
                                   booking.sessionType == SessionType.video
                                       ? 'Join Video'
-                                      : booking.sessionType == SessionType.chat
-                                          ? 'Start Chat'
-                                          : 'View Location',
+                                      : 'View Location',
                                 ),
                               ),
                             ),
@@ -375,16 +416,59 @@ class BookingsTab extends StatelessWidget {
                           ],
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: () {
-                                bookingProvider.escalateIssue(booking.id);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Issue escalated to HOD'),
-                                  ),
-                                );
-                              },
-                              icon: const Icon(Icons.report_problem),
-                              label: const Text('Escalate'),
+                              onPressed: (booking.isEscalated ||
+                                      booking.status == BookingStatus.ESCALATED_TO_HOD ||
+                                      booking.status == BookingStatus.ESCALATED_TO_ADMIN)
+                                  ? null
+                                  : () async {
+                                      try {
+                                        await bookingProvider.escalateIssue(
+                                            booking.id, authProvider.user!.studentId);
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Issue successfully escalated.'),
+                                          ),
+                                        );
+                                      } catch (e) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Failed to escalate issue.'),
+                                          ),
+                                        );
+                                      }
+                                    },
+                              style: ButtonStyle(
+                                foregroundColor: MaterialStateProperty.resolveWith<Color>((Set<MaterialState> states) {
+                                  if (states.contains(MaterialState.disabled)) {
+                                    return Colors.grey;
+                                  }
+                                  return Theme.of(context).colorScheme.error;
+                                }),
+                                side: MaterialStateProperty.resolveWith<BorderSide>((Set<MaterialState> states) {
+                                  if (states.contains(MaterialState.disabled)) {
+                                    return const BorderSide(color: Colors.grey);
+                                  }
+                                  return BorderSide(color: Theme.of(context).colorScheme.error);
+                                }),
+                              ),
+                              icon: booking.isEscalated
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.grey,
+                                      ),
+                                    )
+                                  : const Icon(Icons.report_problem),
+                              label: Text(
+                                booking.isEscalated
+                                    ? 'In Progress'
+                                    : (booking.status == BookingStatus.ESCALATED_TO_HOD ||
+                                            booking.status == BookingStatus.ESCALATED_TO_ADMIN)
+                                        ? 'Escalated'
+                                        : 'Escalate',
+                              ),
                             ),
                           ),
                         ],
@@ -409,30 +493,45 @@ class _StatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Color color;
+    String label;
+
     switch (status) {
       case BookingStatus.pending:
         color = Colors.orange;
+        label = 'Pending';
         break;
       case BookingStatus.approve:
         color = Colors.green;
+        label = 'Approved';
         break;
       case BookingStatus.confirmed:
         color = Colors.blue;
+        label = 'Confirmed';
         break;
       case BookingStatus.cancelled:
         color = Colors.red;
+        label = 'Canceled';
         break;
-        case BookingStatus.ESCALATED_TO_HOD:
-      color = Colors.deepPurple;
-      break;
-    case BookingStatus.ESCALATED_TO_ADMIN:
-      color = Colors.brown; 
-      break;
+      case BookingStatus.ESCALATED_TO_HOD:
+        color = Colors.deepPurple;
+        label = 'Escalated to HOD';
+        break;
+      case BookingStatus.ESCALATED_TO_ADMIN:
+        color = Colors.brown;
+        label = 'Escalated to Admin';
+        break;
+      case BookingStatus.archived:
+        color = Colors.grey;
+        label = 'Archived';
+        break;
+      default:
+        color = Colors.grey;
+        label = 'Unknown';
     }
 
     return Chip(
       label: Text(
-        status.name.toUpperCase(),
+        label.toUpperCase(),
         style: const TextStyle(
           fontSize: 10,
           color: Colors.white,
@@ -444,6 +543,8 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
+
+// All other classes like DashboardScreen, HomeTab, ChatsTab, and ProfileTab remain the same.
 class ChatsTab extends StatefulWidget {
   @override
   _ChatsTabState createState() => _ChatsTabState();
@@ -453,12 +554,10 @@ class _ChatsTabState extends State<ChatsTab> {
   @override
   void initState() {
     super.initState();
-    // Trigger loading chats when the screen is first built
-   Future.microtask(() {
-  final authProvider = Provider.of<AuthProvider>(context, listen: false);
-  Provider.of<ChatProvider>(context, listen: false).loadChats(authProvider);
-});
-
+    Future.microtask(() {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      Provider.of<ChatProvider>(context, listen: false).loadChats(authProvider);
+    });
   }
 
   @override
@@ -468,7 +567,7 @@ class _ChatsTabState extends State<ChatsTab> {
       body: Consumer<ChatProvider>(
         builder: (context, chatProvider, child) {
           if (chatProvider.isLoading) {
-            return Center(child: CircularProgressIndicator());
+            return const Center(child: CircularProgressIndicator());
           }
           if (chatProvider.chats.isEmpty) {
             return Center(

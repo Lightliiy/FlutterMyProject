@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 
 import 'providers/auth_provider.dart';
 import 'providers/booking_provider.dart';
@@ -22,7 +24,11 @@ import 'screens/notifications/notifications_screen.dart';
 
 import 'utils/theme.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(AppEntryPoint());
 }
 
@@ -33,7 +39,6 @@ class AppEntryPoint extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => BookingProvider()),
-
         ChangeNotifierProxyProvider<AuthProvider, ChatProvider>(
           create: (_) => ChatProvider(),
           update: (_, authProvider, __) {
@@ -41,30 +46,27 @@ class AppEntryPoint extends StatelessWidget {
             return ChatProvider(userId: userId);
           },
         ),
-
         ChangeNotifierProvider(create: (_) => UserProvider()),
-
+        // ✅ CORRECTED: Ensure the notification provider is updated correctly when the user changes
         ChangeNotifierProxyProvider<AuthProvider, NotificationProvider>(
-          create: (_) => NotificationProvider(
-            backendBaseUrl: 'http://10.132.251.181:8080',
-            userId: null,
-          ),
-          update: (_, authProvider, notificationProvider) {
-            final userId = authProvider.user?.studentId;
-            if (notificationProvider == null) {
-              return NotificationProvider(
-                backendBaseUrl: 'http://10.132.251.181:8080',
-                userId: userId,
-              )..initialize();
-            }
-            if (notificationProvider.userId != userId) {
-              notificationProvider.userId = userId;
-              notificationProvider.initialize();
+          create: (context) {
+            final authProvider = Provider.of<AuthProvider>(context, listen: false);
+            return NotificationProvider(
+              backendBaseUrl: 'http://10.192.163.181:8080',
+              userId: authProvider.user?.studentId,
+            );
+          },
+          update: (context, authProvider, notificationProvider) {
+            final newUserId = authProvider.user?.studentId;
+            // Only update if the user ID has actually changed
+            if (notificationProvider!.userId != newUserId) {
+              notificationProvider.userId = newUserId;
+              // The setter on NotificationProvider now handles calling initialize(),
+              // so we don't need to call it manually here.
             }
             return notificationProvider;
           },
         ),
-
         ChangeNotifierProvider(create: (_) => SettingsProvider()),
       ],
       child: Consumer<SettingsProvider>(
@@ -86,19 +88,28 @@ class AppEntryPoint extends StatelessWidget {
               '/counselors': (context) => CounselorListScreen(),
               '/booking': (context) => BookingScreen(),
               '/chats': (context) => ChatListScreen(),
-              '/video-call': (context) => VideoCallScreen(),
+
+              '/video-call': (context) {
+                final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?;
+                if (args == null || !args.containsKey('callId') || !args.containsKey('isCaller') || !args.containsKey('currentUserId') || !args.containsKey('otherUserId')) {
+                  return Scaffold(
+                    appBar: AppBar(),
+                    body: const Center(child: Text('Missing video call parameters')),
+                  );
+                }
+                return VideoCallScreen(
+                  callId: args['callId'],
+                  isCaller: args['isCaller'],
+                  currentUserId: args['currentUserId'],
+                  otherUserId: args['otherUserId'],
+                );
+              },
+
               '/profile': (context) => ProfileScreen(),
               '/notifications': (context) => NotificationsScreen(),
 
-              // ✅ Chat route with argument extraction
               '/chat': (context) {
-                final args = ModalRoute.of(context)!.settings.arguments;
-                if (args is! Chat) {
-                  return Scaffold(
-                    appBar: AppBar(),
-                    body: const Center(child: Text('Invalid chat data')),
-                  );
-                }
+                final args = ModalRoute.of(context)!.settings.arguments as Chat;
                 return ChatScreen(
                   counselorId: args.counselorId,
                   chatId: args.id,

@@ -62,37 +62,48 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   void _register() async {
-    if (_formKey.currentState!.validate()) {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+  if (_formKey.currentState!.validate()) {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
+    final userData = {
+      'name': _nameController.text,
+      'email': _emailController.text,
+      'studentId': _studentIdController.text,
+      'phone': _phoneController.text,
+      'department': _selectedDepartment,
+      'yearLevel': parseYearLevel(_selectedYear),
+      'password': _passwordController.text,
+      'profileImage': '',
+    };
+
+    final success = await authProvider.register(userData);
+
+    if (success) {
       
-      // Construct the userData map to match your Spring Boot Student model
-final userData = {
-  'name': _nameController.text,
-  'email': _emailController.text,
-  'studentId': _studentIdController.text,
-  'phone': _phoneController.text,
-  'department': _selectedDepartment,
-  'yearLevel': parseYearLevel(_selectedYear),
-  'password': _passwordController.text,
-  'profileImage': '',
-};
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Registration successful!'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
+      );
 
-final success = await authProvider.register(userData);
-
-      if (success) {
-        // Navigate to dashboard or appropriate screen on successful registration
+      Future.delayed(const Duration(seconds: 2), () {
         Navigator.pushReplacementNamed(context, '/dashboard');
-      } else {
-        // Show error message from AuthProvider
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(authProvider.error ?? 'Registration failed'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      });
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(authProvider.error ?? 'Registration failed'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
+}
+
 
   @override
   Widget build(BuildContext context) {

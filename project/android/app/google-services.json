@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "555612823997",
+    "project_id": "counselling-project-11857",
+    "storage_bucket": "counselling-project-11857.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:555612823997:android:c5676bde56bb07b9a772d4",
+        "android_client_info": {
+          "package_name": "com.example.project"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCxJbKBZIu9PNqXnwXY7uSIBJhboh7Joic"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

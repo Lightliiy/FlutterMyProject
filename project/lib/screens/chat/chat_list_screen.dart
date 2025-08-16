@@ -1,120 +1,237 @@
+// lib/screens/chat/chat_list_screen.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/auth_provider.dart';
-import '../../providers/chat_provider.dart'; // Adjust path if needed
+import '../../providers/chat_provider.dart';
+import 'chat_screen.dart';
+import 'video_call_screen.dart';
+
 class ChatListScreen extends StatefulWidget {
+  const ChatListScreen({super.key});
+
   @override
-  _ChatListScreenState createState() => _ChatListScreenState();
+  State<ChatListScreen> createState() => _ChatListScreenState();
 }
 
 class _ChatListScreenState extends State<ChatListScreen> {
+  StreamSubscription<QuerySnapshot>? _callSubscription;
+  bool _isHandlingCall = false;
+
   @override
   void initState() {
     super.initState();
-   WidgetsBinding.instance.addPostFrameCallback((_) {
-  final authProvider = Provider.of<AuthProvider>(context, listen: false);
-  Provider.of<ChatProvider>(context, listen: false).loadChats(authProvider);
-});
-
+    _initializeCallListener();
+    _loadChats();
   }
 
-  @override
-Widget build(BuildContext context) {
-  final authProvider = Provider.of<AuthProvider>(context, listen: false);
-  final currentStudentId = authProvider.user?.studentId;
+  void _initializeCallListener() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _listenForIncomingCalls();
+    });
+  }
 
-  return Scaffold(
-    appBar: AppBar(
-      title: const Text('Chats'),
-    ),
-    body: Consumer<ChatProvider>(
-      builder: (context, chatProvider, child) {
-        final filteredChats = chatProvider.chats.where((chat) =>
-            chat.studentId == currentStudentId).toList();
+  Future<void> _loadChats() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    await Provider.of<ChatProvider>(context, listen: false).loadChats(authProvider);
+  }
 
-        if (filteredChats.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey[400]),
-                const SizedBox(height: 16),
-                const Text('No chats yet', style: TextStyle(fontSize: 18, color: Colors.grey)),
-                const SizedBox(height: 8),
-                const Text('Start a conversation with your counselor',
-                    style: TextStyle(fontSize: 14, color: Colors.grey)),
-              ],
-            ),
-          );
-        }
+  void _listenForIncomingCalls() {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final currentStudentId = authProvider.user?.id;
 
-        return ListView.builder(
-          itemCount: filteredChats.length,
-          itemBuilder: (context, index) {
-            final chat = filteredChats[index];
-            return Card(
-              margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: Colors.blue,
-                  child: Text(
-                    chat.name.isNotEmpty ? chat.name[0].toUpperCase() : '?',
-                    style: const TextStyle(color: Colors.white),
+    if (currentStudentId == null) {
+      print("DEBUG: Current user ID is null, cannot listen for calls.");
+      return;
+    }
+
+    print("DEBUG: Listening for incoming calls for studentId: $currentStudentId");
+
+    _callSubscription?.cancel();
+    _callSubscription = FirebaseFirestore.instance
+        .collection('calls')
+        .where('receiverId', isEqualTo: currentStudentId)
+        .where('status', isEqualTo: 'calling')
+        .snapshots()
+        .listen((snapshot) async {
+      for (var change in snapshot.docChanges) {
+        if (change.type == DocumentChangeType.added && !_isHandlingCall) {
+          _isHandlingCall = true;
+          final callData = change.doc.data() as Map<String, dynamic>;
+          final callId = change.doc.id;
+          final callerId = callData['callerId'] as String;
+          final callerName = callData['callerName'] as String? ?? 'Counselor';
+
+          print("DEBUG: Incoming call detected! Caller: $callerName, Call ID: $callId");
+          
+          final accepted = await _showIncomingCallDialog(callerName);
+          
+          if (accepted) {
+            await FirebaseFirestore.instance
+                .collection('calls')
+                .doc(callId)
+                .update({
+              'status': 'accepted',
+              'answeredAt': FieldValue.serverTimestamp(),
+            });
+
+            if (mounted) {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => VideoCallScreen(
+                    callId: callId,
+                    isCaller: false,
+                    currentUserId: currentStudentId,
+                    otherUserId: callerId,
                   ),
                 ),
-                title: Text(
-                  chat.name,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                subtitle: Text(
-                  chat.lastMessage ?? 'No messages yet',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: Colors.grey[600]),
-                ),
-                trailing: Text(
-                  chat.lastMessageTime != null
-                      ? DateFormat.Hm().format(chat.lastMessageTime!)
-                      : '',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-                onTap: () {
-                  Navigator.pushNamed(
-                    context,
-                    '/chat',
-                    arguments: chat,
-                  );
-                },
-              ),
-            );
-          },
-        );
-      },
-    ),
-    floatingActionButton: FloatingActionButton(
-      onPressed: () {
-        _showStartChatDialog(context);
-      },
-      child: const Icon(Icons.chat),
-    ),
-  );
-}
-  void _showStartChatDialog(BuildContext context) {
+              );
+            }
+          } else {
+            await FirebaseFirestore.instance
+                .collection('calls')
+                .doc(callId)
+                .update({
+              'status': 'declined',
+              'declinedAt': FieldValue.serverTimestamp(),
+            });
+          }
+          
+          _isHandlingCall = false;
+        }
+      }
+    }, onError: (error) {
+      print("DEBUG: Error listening for calls: $error");
+      _isHandlingCall = false;
+    });
+  }
+
+  Future<bool> _showIncomingCallDialog(String callerName) async {
+    final completer = Completer<bool>();
+    
+    if (!mounted) return false;
+
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: const Text('Start New Chat'),
-        content: const Text('Choose how you\'d like to start chatting:'),
+        title: const Text('Incoming Video Call'),
+        content: Text('Call from $callerName'),
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.pop(context);
-              Navigator.pushNamed(context, '/chat');
+              Navigator.of(context).pop();
+              completer.complete(false);
             },
-            child: const Text('With Counselor'),
+            child: const Text('Decline', style: TextStyle(color: Colors.red)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              completer.complete(true);
+            },
+            child: const Text('Accept'),
           ),
         ],
+      ),
+    );
+
+    return completer.future;
+  }
+
+  @override
+  void dispose() {
+    _callSubscription?.cancel();
+    _isHandlingCall = false;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context);
+    final currentUserId = authProvider.user?.id; // Use the 'id' field
+
+    print("DEBUG: The user ID for the chat query is: $currentUserId");
+
+    if (currentUserId == null) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Chats'),
+        ),
+        body: const Center(child: Text('Please log in to see your chats.')),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Chats'),
+      ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('chats')
+            .where('studentId', isEqualTo: currentUserId) // Match the Firestore field
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
+
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+            return const Center(child: Text('No active chats.'));
+          }
+
+          final chatDocs = snapshot.data!.docs;
+
+          return ListView.builder(
+            itemCount: chatDocs.length,
+            itemBuilder: (context, index) {
+              final chatData = chatDocs[index].data() as Map<String, dynamic>;
+              final chatId = chatDocs[index].id;
+              final counselorName = chatData['counselorName'] as String? ?? 'Counselor';
+              final lastMessage = chatData['lastMessage'] as String? ?? 'No messages yet';
+              final unreadCount = chatData['unreadCount'] as int? ?? 0;
+              final counselorId = chatData['counselorId'] as String;
+
+              return Card(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: ListTile(
+                  leading: CircleAvatar(
+                    child: Text(counselorName[0]),
+                  ),
+                  title: Text(counselorName),
+                  subtitle: Text(lastMessage),
+                  trailing: unreadCount > 0
+                      ? CircleAvatar(
+                          radius: 12,
+                          backgroundColor: Colors.red,
+                          child: Text(
+                            unreadCount.toString(),
+                            style: const TextStyle(color: Colors.white, fontSize: 10),
+                          ),
+                        )
+                      : null,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ChatScreen(
+                          counselorId: counselorId,
+                          chatId: chatId,
+                          counselorName: counselorName,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }

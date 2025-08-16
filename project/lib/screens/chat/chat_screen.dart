@@ -1,9 +1,12 @@
-import 'dart:async';
+// lib/screens/chat/chat_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:uuid/uuid.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import 'video_call_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final String counselorId;
@@ -24,46 +27,28 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
-  Timer? _pollingTimer;
-  String? _chatId;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initializeChat();
-    });
-
-    _pollingTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
-      _initializeChat();
+      _loadMessages();
     });
   }
 
-  Future<void> _initializeChat() async {
+  Future<void> _loadMessages() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final studentId = authProvider.user?.studentId;
 
-    if (studentId != null) {
+    if (widget.chatId.isNotEmpty && studentId != null) {
       final chatProvider = Provider.of<ChatProvider>(context, listen: false);
-      final chat = await chatProvider.getOrCreateChat(
-        widget.counselorId,
-        studentId,
-        widget.counselorName,
-      );
-      if (chat != null) {
-        _chatId = chat.id;
-        await chatProvider.loadMessages(chat.id, studentId);
-
-        if (!mounted) return;
-        setState(() {});
-        _scrollToBottom();
-      }
+      chatProvider.listenToMessages(widget.chatId, studentId);
+      _scrollToBottom();
     }
   }
 
   @override
   void dispose() {
-    _pollingTimer?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -71,19 +56,16 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _sendMessage() {
     final text = _messageController.text.trim();
-    if (text.isNotEmpty && _chatId != null) {
+    if (text.isNotEmpty) {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final user = authProvider.user;
       if (user != null) {
         Provider.of<ChatProvider>(context, listen: false)
             .sendMessage(
-              _chatId!,
+              widget.chatId,
               text,
               user.studentId,
               user.name,
-              widget.counselorId,
-              user.studentId,
-              widget.counselorName,
             )
             .then((_) {
           _messageController.clear();
@@ -123,9 +105,6 @@ class _ChatScreenState extends State<ChatScreen> {
             '📎 $fileName',
             user.studentId,
             user.name,
-            widget.counselorId,
-            user.studentId,
-            widget.counselorName,
           );
           _scrollToBottom();
         }
@@ -141,8 +120,6 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _deleteChat() async {
-    if (_chatId == null) return;
-
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -165,16 +142,11 @@ class _ChatScreenState extends State<ChatScreen> {
     if (confirmed == true) {
       try {
         final chatProvider = Provider.of<ChatProvider>(context, listen: false);
-        await chatProvider.deleteChat(_chatId!);
-        // Clear UI state after deletion
-        setState(() {
-          _chatId = null;
-        });
-        _messageController.clear();
+        await chatProvider.deleteChat(widget.chatId);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Chat deleted')),
         );
-        Navigator.of(context).pop(); // Optionally close the chat screen
+        Navigator.of(context).pop();
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to delete chat: $e')),
@@ -182,12 +154,55 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     }
   }
+  
+  Future<void> _startVideoCall() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final user = authProvider.user;
 
+    if (user == null || widget.counselorId.isEmpty) {
+      return;
+    }
+
+    final currentUserId = user.studentId;
+    final receiverId = widget.counselorId;
+    
+    if (currentUserId.isEmpty) {
+      return;
+    }
+
+    final callId = const Uuid().v4();
+
+    try {
+      await FirebaseFirestore.instance.collection('calls').doc(callId).set({
+        'callerId': currentUserId,
+        'receiverId': receiverId,
+        'callerName': user.name,
+        'status': 'calling',
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => VideoCallScreen(
+            callId: callId,
+            isCaller: true,
+            currentUserId: currentUserId,
+            otherUserId: receiverId,
+          ),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to start call: $e')),
+      );
+    }
+  }
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Chat"),
+        title: Text(widget.counselorName),
         actions: [
           IconButton(
             icon: const Icon(Icons.info_outline),
@@ -197,6 +212,11 @@ class _ChatScreenState extends State<ChatScreen> {
             icon: const Icon(Icons.delete),
             onPressed: _deleteChat,
             tooltip: 'Delete Chat',
+          ),
+          IconButton(
+            icon: const Icon(Icons.video_call),
+            onPressed: _startVideoCall,
+            tooltip: 'Video Call',
           ),
         ],
       ),
@@ -213,8 +233,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   return const Center(child: Text('No messages yet'));
                 }
 
-                final List<ChatMessage> messages = List.from(chatProvider.messages)
-                  ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+                final List<ChatMessage> messages = chatProvider.messages;
 
                 return ListView.builder(
                   controller: _scrollController,

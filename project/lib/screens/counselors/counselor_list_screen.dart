@@ -129,48 +129,6 @@ class _CounselorListScreenState extends State<CounselorListScreen> {
                             child: const Text('Book Appointment'),
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: () async {
-                              final chatProvider = Provider.of<ChatProvider>(
-                                  context,
-                                  listen: false);
-                              final userProvider = Provider.of<UserProvider>(
-                                  context,
-                                  listen: false);
-                              final studentId = userProvider.user?.studentId;
-
-                              if (studentId != null) {
-                                final chat = await chatProvider.getOrCreateChat(
-                                  counselor.id,
-                                  studentId,
-                                  counselor.name,
-                                );
-
-                                if (chat != null) {
-                                  Navigator.pushNamed(
-                                    context,
-                                    '/chat',
-                                    arguments: chat,
-                                  );
-                                } else {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                        content: Text(
-                                            'Failed to start chat with counselor')),
-                                  );
-                                }
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                      content: Text('Student not logged in')),
-                                );
-                              }
-                            },
-                            child: const Text('Chat'),
-                          ),
-                        ),
                       ],
                     ),
                   ],
