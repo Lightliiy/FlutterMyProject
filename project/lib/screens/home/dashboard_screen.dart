@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:project/screens/chat/chat_list_screen.dart';
+import 'package:project/screens/chat/chat_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:project/providers/chat_provider.dart';
 import 'package:project/providers/auth_provider.dart';
@@ -18,7 +20,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<Widget> get _screens => [
     HomeTab(),
     BookingsTab(),
-    ChatsTab(),
+    ChatListScreen(),
     ProfileTab(),
   ];
 

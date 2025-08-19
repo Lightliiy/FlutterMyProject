@@ -225,41 +225,29 @@ class BookingProvider with ChangeNotifier {
         }
     }
  Future<void> requestCounselorChangeToHOD({
-        required String studentId,
-        required String studentName,
-        required String? currentCounselorName,
-        required String reason,
-    }) async {
-        _isLoading = true;
-        notifyListeners();
-        try {
-            final requestData = {
-                'studentId': studentId,
-                'studentName': studentName,
-                'currentCounselorName': currentCounselorName,
-                'reason': reason,
-            };
+  required String studentId,
+  required String studentName,
+  required String? currentCounselorName,
+  required String reason,
+}) async {
+  final url = Uri.parse('http://10.8.5.77:8080/api/change-requests');
+  final body = {
+    "student": {"studentId": studentId},
+    "currentCounselorName": currentCounselorName,
+    "reason": reason,
+  };
 
-            final response = await http.post(
-                Uri.parse('$baseUrl/change-requests/to-hod'),
-                headers: {'Content-Type': 'application/json'},
-                body: jsonEncode(requestData),
-            );
+  final response = await http.post(
+    url,
+    body: json.encode(body),
+    headers: {"Content-Type": "application/json"},
+  );
 
-            if (response.statusCode == 201) {
-                print('Counselor change request submitted to HOD successfully.');
-            } else {
-                print('Failed to submit HOD change request: ${response.statusCode} ${response.body}');
-                throw Exception('Failed to submit HOD change request.');
-            }
-        } catch (e) {
-            print('Error submitting HOD change request: $e');
-            rethrow;
-        } finally {
-            _isLoading = false;
-            notifyListeners();
-        }
-    }
+  if (response.statusCode != 200 && response.statusCode != 201) {
+    throw Exception("Failed to submit request");
+  }
+}
+
 
     void startAutoRefreshBookings(String studentId, {int intervalSeconds = 5}) {
         _bookingRefreshTimer?.cancel();
