@@ -1,4 +1,3 @@
-// providers/booking_provider.dart
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -17,7 +16,7 @@ class BookingProvider with ChangeNotifier {
     List<Counselor> get counselors => _counselors;
     bool get isLoading => _isLoading;
 
-    static const String baseUrl = 'http://10.192.163.181:8080/api';
+    static const String baseUrl = 'http://10.8.5.77:8080/api';
 
     BookingProvider();
 
@@ -188,6 +187,77 @@ class BookingProvider with ChangeNotifier {
             _bookings[index] = _bookings[index].copyWith(status: originalStatus);
             print('Error escalating to HOD: $e');
             rethrow;
+        }
+    }
+
+    Future<void> requestCounselorChange({
+        required String studentId,
+        required String counselorId,
+        required String reason,
+    }) async {
+        _isLoading = true;
+        notifyListeners();
+        try {
+            final requestData = {
+                'studentId': studentId,
+                'counselorId': counselorId,
+                'reason': reason,
+            };
+
+            final response = await http.post(
+                Uri.parse('$baseUrl/change-requests/add'),
+                headers: {'Content-Type': 'application/json'},
+                body: jsonEncode(requestData),
+            );
+
+            if (response.statusCode == 201) {
+                print('Counselor change request submitted successfully.');
+            } else {
+                print('Failed to submit change request: ${response.statusCode} ${response.body}');
+                throw Exception('Failed to submit change request.');
+            }
+        } catch (e) {
+            print('Error submitting change request: $e');
+            rethrow;
+        } finally {
+            _isLoading = false;
+            notifyListeners();
+        }
+    }
+ Future<void> requestCounselorChangeToHOD({
+        required String studentId,
+        required String studentName,
+        required String? currentCounselorName,
+        required String reason,
+    }) async {
+        _isLoading = true;
+        notifyListeners();
+        try {
+            final requestData = {
+                'studentId': studentId,
+                'studentName': studentName,
+                'currentCounselorName': currentCounselorName,
+                'reason': reason,
+            };
+
+            final response = await http.post(
+                Uri.parse('$baseUrl/change-requests/to-hod'),
+                headers: {'Content-Type': 'application/json'},
+                body: jsonEncode(requestData),
+            );
+
+            if (response.statusCode == 201) {
+                print('Counselor change request submitted to HOD successfully.');
+            } else {
+                print('Failed to submit HOD change request: ${response.statusCode} ${response.body}');
+                throw Exception('Failed to submit HOD change request.');
+            }
+        } catch (e) {
+            print('Error submitting HOD change request: $e');
+            rethrow;
+        } finally {
+            _isLoading = false;
+            notifyListeners();
         }
     }
 

@@ -157,6 +157,33 @@ class HomeTab extends StatelessWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 16),
+            // START OF NEW CODE
+            Row(
+              children: [
+                Expanded(
+                  child: _QuickActionCard(
+                    icon: Icons.person_add_disabled_outlined,
+                    title: 'Change Counselor',
+                    subtitle: 'Request a new counselor',
+                    onTap: () {
+                      Navigator.pushNamed(context, '/change-counselor');
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _QuickActionCard(
+                    icon: Icons.assignment_late,
+                    title: 'Escalate Issue',
+                    subtitle: 'Raise an issue',
+                    onTap: () {
+                    },
+                  ),
+                ),
+              ],
+            ),
+            // END OF NEW CODE
           ],
         ),
       ),
@@ -399,7 +426,7 @@ class BookingsTab extends StatelessWidget {
                           if (booking.status == BookingStatus.confirmed) ...[
                             Expanded(
                               child: OutlinedButton.icon(
-                                onPressed: () {}, // Implement join logic
+                                onPressed: () {}, 
                                 icon: Icon(
                                   booking.sessionType == SessionType.video
                                       ? Icons.video_call
@@ -417,26 +444,26 @@ class BookingsTab extends StatelessWidget {
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: (booking.isEscalated ||
-                                      booking.status == BookingStatus.ESCALATED_TO_HOD ||
-                                      booking.status == BookingStatus.ESCALATED_TO_ADMIN)
+                                  booking.status == BookingStatus.ESCALATED_TO_HOD ||
+                                  booking.status == BookingStatus.ESCALATED_TO_ADMIN)
                                   ? null
                                   : () async {
-                                      try {
-                                        await bookingProvider.escalateIssue(
-                                            booking.id, authProvider.user!.studentId);
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('Issue successfully escalated.'),
-                                          ),
-                                        );
-                                      } catch (e) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('Failed to escalate issue.'),
-                                          ),
-                                        );
-                                      }
-                                    },
+                                try {
+                                  await bookingProvider.escalateIssue(
+                                      booking.id, authProvider.user!.studentId);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Issue successfully escalated.'),
+                                    ),
+                                  );
+                                } catch (e) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Failed to escalate issue.'),
+                                    ),
+                                  );
+                                }
+                              },
                               style: ButtonStyle(
                                 foregroundColor: MaterialStateProperty.resolveWith<Color>((Set<MaterialState> states) {
                                   if (states.contains(MaterialState.disabled)) {
@@ -453,21 +480,21 @@ class BookingsTab extends StatelessWidget {
                               ),
                               icon: booking.isEscalated
                                   ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.grey,
-                                      ),
-                                    )
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.grey,
+                                ),
+                              )
                                   : const Icon(Icons.report_problem),
                               label: Text(
                                 booking.isEscalated
                                     ? 'In Progress'
                                     : (booking.status == BookingStatus.ESCALATED_TO_HOD ||
-                                            booking.status == BookingStatus.ESCALATED_TO_ADMIN)
-                                        ? 'Escalated'
-                                        : 'Escalate',
+                                    booking.status == BookingStatus.ESCALATED_TO_ADMIN)
+                                    ? 'Escalated'
+                                    : 'Escalate',
                               ),
                             ),
                           ),
@@ -543,8 +570,6 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
-
-// All other classes like DashboardScreen, HomeTab, ChatsTab, and ProfileTab remain the same.
 class ChatsTab extends StatefulWidget {
   @override
   _ChatsTabState createState() => _ChatsTabState();

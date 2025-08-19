@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:project/screens/counselors/change_counselor_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
@@ -47,22 +48,21 @@ class AppEntryPoint extends StatelessWidget {
           },
         ),
         ChangeNotifierProvider(create: (_) => UserProvider()),
-        // ✅ CORRECTED: Ensure the notification provider is updated correctly when the user changes
+        
         ChangeNotifierProxyProvider<AuthProvider, NotificationProvider>(
           create: (context) {
             final authProvider = Provider.of<AuthProvider>(context, listen: false);
             return NotificationProvider(
-              backendBaseUrl: 'http://10.192.163.181:8080',
+              backendBaseUrl: 'http://10.8.5.77:8080',
               userId: authProvider.user?.studentId,
             );
           },
           update: (context, authProvider, notificationProvider) {
             final newUserId = authProvider.user?.studentId;
-            // Only update if the user ID has actually changed
+          
             if (notificationProvider!.userId != newUserId) {
               notificationProvider.userId = newUserId;
-              // The setter on NotificationProvider now handles calling initialize(),
-              // so we don't need to call it manually here.
+              
             }
             return notificationProvider;
           },
@@ -88,6 +88,7 @@ class AppEntryPoint extends StatelessWidget {
               '/counselors': (context) => CounselorListScreen(),
               '/booking': (context) => BookingScreen(),
               '/chats': (context) => ChatListScreen(),
+              '/change-counselor': (context) => ChangeCounselorScreen(),
 
               '/video-call': (context) {
                 final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?;

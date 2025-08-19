@@ -19,11 +19,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   final List<String> _departments = [
     'Computer Science',
-    'Engineering',
-    'Business Administration',
-    'Medicine',
+    'Information Technology',
+    'Science',
+    'Health',
     'Law',
-    'Arts & Humanities',
+    'Account and Finance',
     'Tourism',
   ];
 
@@ -169,7 +169,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           key: _formKey,
           child: Column(
             children: [
-              // Profile Picture
+
               Stack(
                 children: [
                   CircleAvatar(
@@ -208,7 +208,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 32),
 
-              // Form Fields
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(
@@ -299,7 +298,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 32),
 
-              // Additional Settings
               Card(
                 child: Column(
                   children: [
@@ -329,7 +327,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 24),
 
-              // Danger Zone
+              
               Card(
                 color: Colors.red[50],
                 child: Column(

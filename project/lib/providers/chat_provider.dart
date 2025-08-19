@@ -91,7 +91,7 @@ class ChatMessage {
 
 class ChatProvider with ChangeNotifier {
   final String? userId;
-  static const String _baseUrl = 'http://10.192.163.181:8080/api/chats';
+  static const String _baseUrl = 'http://10.8.5.77:8080/api/chats';
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   List<Chat> _chats = [];

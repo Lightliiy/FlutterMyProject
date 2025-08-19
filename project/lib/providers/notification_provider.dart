@@ -84,7 +84,7 @@ class NotificationProvider with ChangeNotifier {
   }) : _userId = userId;
 
   String? get userId => _userId;
-  // ✅ UPDATED: Set a new user ID and refresh notifications
+  //  UPDATED: Set a new user ID and refresh notifications
   set userId(String? value) {
     if (_userId != value) {
       _userId = value;

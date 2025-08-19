@@ -1,4 +1,3 @@
-// lib/signaling.dart
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -12,12 +11,14 @@ class Signaling {
   MediaStream? _localStream;
 
   String? _chatId;
-  final CollectionReference _chatsCollection = FirebaseFirestore.instance.collection('chats');
+  final CollectionReference _chatsCollection =
+      FirebaseFirestore.instance.collection('chats');
 
   Function(MediaStream stream)? onAddRemoteStream;
   Function(String status)? onCallStatusChanged;
 
-  Signaling({required this.callId, required this.currentUserId, required this.otherUserId});
+  Signaling(
+      {required this.callId, required this.currentUserId, required this.otherUserId});
 
   Future<MediaStream> openUserMedia() async {
     final stream = await navigator.mediaDevices.getUserMedia({
@@ -34,6 +35,7 @@ class Signaling {
     final config = {
       'iceServers': [
         {'urls': 'stun:stun.l.google.com:19302'},
+        {'urls': 'stun:stun1.l.google.com:19302'},
       ]
     };
     final constraints = {
@@ -64,13 +66,10 @@ class Signaling {
         'sdpMLineIndex': candidate.sdpMLineIndex,
       };
 
-      await _firestore
-          .collection('calls')
-          .doc(callId)
-          .collection('candidates')
-          .doc(currentUserId)
-          .collection('ice')
-          .add(candidateData);
+      await _firestore.collection('calls').doc(callId).update({
+  'iceCandidates.$currentUserId': FieldValue.arrayUnion([candidateData]),
+});
+
     };
 
     _peerConnection?.onConnectionState = (RTCPeerConnectionState state) {};
@@ -85,43 +84,46 @@ class Signaling {
     final offer = await _peerConnection!.createOffer();
     await _peerConnection!.setLocalDescription(offer);
 
-    await _firestore.collection('calls').doc(callId).update({
+    await _firestore.collection('calls').doc(callId).set({
       'offer': {
         'type': offer.type,
         'sdp': offer.sdp,
       },
-    });
+      'status': 'calling',
+      'iceCandidates': {},
+      'answer': null,
+    }, SetOptions(merge: true));
 
     _firestore.collection('calls').doc(callId).snapshots().listen((snapshot) async {
       final data = snapshot.data();
-      if (data != null && data['answer'] != null && await _peerConnection?.getRemoteDescription() == null) {
+      if (data == null) {
+        onCallStatusChanged?.call('ended');
+        hangUp();
+        return;
+      }
+      if (data['answer'] != null && await _peerConnection?.getRemoteDescription() == null) {
         final answer = data['answer'];
         await _peerConnection!.setRemoteDescription(
           RTCSessionDescription(answer['sdp'], answer['type']),
         );
       }
-      if (data != null && (data['status'] == 'declined' || data['status'] == 'ended' || data['status'] == 'no_answer')) {
+      if (data['status'] == 'declined' || data['status'] == 'ended' || data['status'] == 'no_answer') {
         onCallStatusChanged?.call(data['status']);
         hangUp();
       }
-    });
 
-    _firestore
-        .collection('calls')
-        .doc(callId)
-        .collection('candidates')
-        .doc(otherUserId)
-        .collection('ice')
-        .snapshots()
-        .listen((snapshot) {
-      for (var docChange in snapshot.docChanges) {
-        if (docChange.type == DocumentChangeType.added) {
-          final data = docChange.doc.data();
-          if (data != null) {
+      if (data['iceCandidates'] != null && data['iceCandidates'][otherUserId] != null) {
+        List<dynamic> candidates = data['iceCandidates'][otherUserId];
+        if (candidates.isNotEmpty) {
+          for (var candidateData in candidates) {
             _peerConnection!.addCandidate(
-              RTCIceCandidate(data['candidate'], data['sdpMid'], data['sdpMLineIndex']),
+              RTCIceCandidate(candidateData['candidate'], candidateData['sdpMid'], candidateData['sdpMLineIndex']),
             );
           }
+          
+          await _firestore.collection('calls').doc(callId).update({
+            'iceCandidates.$otherUserId': FieldValue.arrayRemove(candidates),
+          });
         }
       }
     });
@@ -147,32 +149,37 @@ class Signaling {
     final answer = await _peerConnection!.createAnswer();
     await _peerConnection!.setLocalDescription(answer);
 
+    _firestore.collection('calls').doc(callId).snapshots().listen((snapshot) async {
+      final data = snapshot.data();
+      if (data == null) {
+        onCallStatusChanged?.call('ended');
+        hangUp();
+        return;
+      }
+
+      if (data['iceCandidates'] != null && data['iceCandidates'][otherUserId] != null) {
+        List<dynamic> candidates = data['iceCandidates'][otherUserId];
+        if (candidates.isNotEmpty) {
+          for (var candidateData in candidates) {
+            _peerConnection!.addCandidate(
+              RTCIceCandidate(candidateData['candidate'], candidateData['sdpMid'], candidateData['sdpMLineIndex']),
+            );
+          }
+        
+          await _firestore.collection('calls').doc(callId).update({
+            'iceCandidates.$otherUserId': FieldValue.arrayRemove(candidates),
+          });
+        }
+      }
+    });
+
+  
     await _firestore.collection('calls').doc(callId).update({
       'answer': {
         'type': answer.type,
         'sdp': answer.sdp,
       },
       'status': 'in_call',
-    });
-
-    _firestore
-        .collection('calls')
-        .doc(callId)
-        .collection('candidates')
-        .doc(otherUserId)
-        .collection('ice')
-        .snapshots()
-        .listen((snapshot) {
-      for (var docChange in snapshot.docChanges) {
-        if (docChange.type == DocumentChangeType.added) {
-          final data = docChange.doc.data();
-          if (data != null) {
-            _peerConnection!.addCandidate(
-              RTCIceCandidate(data['candidate'], data['sdpMid'], data['sdpMLineIndex']),
-            );
-          }
-        }
-      }
     });
   }
 
@@ -186,16 +193,6 @@ class Signaling {
       _peerConnection = null;
 
       await _firestore.collection('calls').doc(callId).update({'status': 'ended'});
-
-      final callerIceCollection = _firestore.collection('calls').doc(callId).collection('candidates').doc(currentUserId).collection('ice');
-      final receiverIceCollection = _firestore.collection('calls').doc(callId).collection('candidates').doc(otherUserId).collection('ice');
-
-      await _deleteCollection(callerIceCollection);
-      await _deleteCollection(receiverIceCollection);
-
-      await _firestore.collection('calls').doc(callId).collection('candidates').doc(currentUserId).delete();
-      await _firestore.collection('calls').doc(callId).collection('candidates').doc(otherUserId).delete();
-
     } catch (e) {}
   }
 
@@ -206,65 +203,5 @@ class Signaling {
       batch.delete(doc.reference);
     }
     await batch.commit();
-  }
-
-  Future<String> getOrCreateChatId() async {
-    final chatQuery = await _chatsCollection
-        .where('counselorId', isEqualTo: currentUserId)
-        .where('studentId', isEqualTo: otherUserId)
-        .limit(1)
-        .get();
-
-    if (chatQuery.docs.isNotEmpty) {
-      _chatId = chatQuery.docs.first.id;
-      return _chatId!;
-    } else {
-      final newChatDoc = await _chatsCollection.add({
-        'counselorId': currentUserId,
-        'studentId': otherUserId,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-      _chatId = newChatDoc.id;
-      return _chatId!;
-    }
-  }
-  
-  Future<void> sendMessage(String content) async {
-    if (_chatId == null) {
-      await getOrCreateChatId();
-    }
-    
-    final messageCollection = _chatsCollection.doc(_chatId!).collection('messages');
-    
-    await messageCollection.add({
-      'senderId': currentUserId,
-      'content': content,
-      'timestamp': FieldValue.serverTimestamp(),
-    });
-  }
-
-  Stream<QuerySnapshot> get messagesStream {
-    if (_chatId == null) {
-      throw Exception('Chat ID is not set. Call getOrCreateChatId() first.');
-    }
-    return _chatsCollection
-        .doc(_chatId!)
-        .collection('messages')
-        .orderBy('timestamp')
-        .snapshots();
-  }
-
-  Future<void> deleteChat() async {
-    if (_chatId == null) return;
-    
-    final messages = await _chatsCollection.doc(_chatId).collection('messages').get();
-
-    final batch = _firestore.batch();
-    for (var doc in messages.docs) {
-      batch.delete(doc.reference);
-    }
-    await batch.commit();
-
-    await _chatsCollection.doc(_chatId).delete();
   }
 }

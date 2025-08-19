@@ -9,7 +9,7 @@ class WebSocketService {
   void connect(String userId, void Function(Map<String, dynamic>) onMessageReceived) {
 _client = StompClient(
   config: StompConfig.SockJS(
-    url: 'http://10.192.163.181:8080/ws-chat',
+    url: 'http://10.8.5.77:8080/ws-chat',
     onConnect: (StompFrame frame) {
       print('WebSocket connected');
 

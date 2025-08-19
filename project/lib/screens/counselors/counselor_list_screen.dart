@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/booking_provider.dart';
 import '../../providers/user_provider.dart';
-import '../../providers/chat_provider.dart';
 import '../../models/counselor.dart';
 
 class CounselorListScreen extends StatefulWidget {

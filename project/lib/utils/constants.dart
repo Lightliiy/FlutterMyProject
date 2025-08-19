@@ -1,5 +1,5 @@
 class AppConstants {
-  static const String baseUrl = 'http://10.192.163.181:8080'; // Your server IP and port
+  static const String baseUrl = 'http://10.8.5.77:8080'; // Your server IP and port
 
   static const String apiEndpointPrefix = '/api'; // API base path
 
